@@ -8,34 +8,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Univrs.io organic bioluminescence palette
-        void: '#0a0d0b',
-        'deep-earth': '#0f1411',
-        'forest-floor': '#141a16',
-        moss: '#1a221d',
-        bark: '#232d27',
+        // Univrs.io organic bioluminescence palette - CSS variable based for theme switching
+        void: 'var(--void)',
+        'deep-earth': 'var(--deep-earth)',
+        'forest-floor': 'var(--forest-floor)',
+        moss: 'var(--moss)',
+        bark: 'var(--bark)',
         // Bioluminescent accents
         glow: {
-          cyan: '#00ffd5',
-          'cyan-dim': 'rgba(0, 255, 213, 0.25)',
-          gold: '#ffd700',
-          'gold-dim': 'rgba(255, 215, 0, 0.19)',
+          cyan: 'var(--glow-cyan)',
+          'cyan-dim': 'var(--glow-cyan-dim)',
+          gold: 'var(--glow-gold)',
+          'gold-dim': 'var(--glow-gold-dim)',
         },
         spore: {
-          purple: '#b088f9',
+          purple: 'var(--spore-purple)',
         },
         mycelium: {
-          white: '#e8f4ec',
+          white: 'var(--mycelium-white)',
         },
-        'soft-gray': '#8a9a8f',
-        'border-subtle': '#2a3a30',
+        'soft-gray': 'var(--soft-gray)',
+        'border-subtle': 'var(--border-subtle)',
         // Legacy mycelial palette for compatibility
         mycelial: {
           50: '#f0fdf4',
           100: '#dcfce7',
           200: '#bbf7d0',
           300: '#86efac',
-          400: '#00ffd5', // Updated to glow-cyan
+          400: 'var(--glow-cyan)',
           500: '#00b8a0',
           600: '#008b75',
           700: '#15803d',
@@ -44,9 +44,9 @@ export default {
           950: '#052e16',
         },
         surface: {
-          dark: '#0a0d0b', // void
-          DEFAULT: '#0f1411', // deep-earth
-          light: '#141a16', // forest-floor
+          dark: 'var(--void)',
+          DEFAULT: 'var(--deep-earth)',
+          light: 'var(--forest-floor)',
         },
       },
       fontFamily: {

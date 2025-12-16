@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useMemo } from 'react';
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import ForceGraph2D, { ForceGraphMethods } from 'react-force-graph-2d';
 import type { GraphNode, GraphLink } from '@/types';
 
@@ -9,36 +9,62 @@ interface PeerGraphProps {
   selectedNodeId?: string | null;
 }
 
-// Univrs.io bioluminescent color palette
-const COLORS = {
-  void: '#0a0d0b',
-  deepEarth: '#0f1411',
-  forestFloor: '#141a16',
-  borderSubtle: '#2a3a30',
-  glowCyan: '#00ffd5',
-  glowCyanDim: 'rgba(0, 255, 213, 0.25)',
-  glowGold: '#ffd700',
-  sporePurple: '#b088f9',
-  myceliumWhite: '#e8f4ec',
-  softGray: '#8a9a8f',
-};
+// Get CSS variable value from document
+function getCSSVariable(name: string): string {
+  if (typeof window === 'undefined') return '';
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Get current theme colors from CSS variables
+function getThemeColors() {
+  return {
+    void: getCSSVariable('--void') || '#0a0d0b',
+    deepEarth: getCSSVariable('--deep-earth') || '#0f1411',
+    forestFloor: getCSSVariable('--forest-floor') || '#141a16',
+    borderSubtle: getCSSVariable('--border-subtle') || '#2a3a30',
+    glowCyan: getCSSVariable('--glow-cyan') || '#00ffd5',
+    glowCyanDim: getCSSVariable('--glow-cyan-dim') || 'rgba(0, 255, 213, 0.25)',
+    glowGold: getCSSVariable('--glow-gold') || '#ffd700',
+    sporePurple: getCSSVariable('--spore-purple') || '#b088f9',
+    myceliumWhite: getCSSVariable('--mycelium-white') || '#e8f4ec',
+    softGray: getCSSVariable('--soft-gray') || '#8a9a8f',
+  };
+}
 
 export function PeerGraph({ nodes, links, onNodeClick, selectedNodeId }: PeerGraphProps) {
   const graphRef = useRef<ForceGraphMethods>();
+  const [colors, setColors] = useState(getThemeColors);
+
+  // Update colors when theme changes
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setColors(getThemeColors());
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    // Initial update
+    setColors(getThemeColors());
+
+    return () => observer.disconnect();
+  }, []);
 
   // Memoize graph data to prevent re-renders from creating new objects
   const graphDataMemo = useMemo(() => ({ nodes, links }), [nodes, links]);
 
   // Color scale based on reputation - univrs.io palette
   const getNodeColor = useCallback((node: GraphNode) => {
-    if (node.isLocal) return COLORS.sporePurple; // purple for local node
+    if (node.isLocal) return colors.sporePurple; // purple for local node
     const score = node.reputation;
-    if (score >= 0.9) return COLORS.glowCyan; // cyan - excellent
-    if (score >= 0.7) return COLORS.glowGold; // gold - good
-    if (score >= 0.5) return COLORS.softGray; // gray - neutral
+    if (score >= 0.9) return colors.glowCyan; // cyan - excellent
+    if (score >= 0.7) return colors.glowGold; // gold - good
+    if (score >= 0.5) return colors.softGray; // gray - neutral
     if (score >= 0.3) return '#f59e0b'; // amber - poor
     return '#ef4444'; // red - untrusted
-  }, []);
+  }, [colors]);
 
   const getNodeSize = useCallback((node: GraphNode) => {
     return node.isLocal ? 12 : 8 + node.reputation * 4;
@@ -83,7 +109,7 @@ export function PeerGraph({ nodes, links, onNodeClick, selectedNodeId }: PeerGra
       ctx.fill();
 
       // Draw border
-      ctx.strokeStyle = isSelected ? COLORS.myceliumWhite : COLORS.borderSubtle;
+      ctx.strokeStyle = isSelected ? colors.myceliumWhite : colors.borderSubtle;
       ctx.lineWidth = isSelected ? 2 / globalScale : 1 / globalScale;
       ctx.stroke();
 
@@ -91,10 +117,10 @@ export function PeerGraph({ nodes, links, onNodeClick, selectedNodeId }: PeerGra
       ctx.font = `600 ${fontSize}px Syne, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = COLORS.myceliumWhite;
+      ctx.fillStyle = colors.myceliumWhite;
       ctx.fillText(label, node.x, node.y + size + 4);
     },
-    [getNodeColor, getNodeSize, selectedNodeId]
+    [getNodeColor, getNodeSize, selectedNodeId, colors]
   );
 
   // Safe click handler that extracts just the ID
@@ -128,10 +154,10 @@ export function PeerGraph({ nodes, links, onNodeClick, selectedNodeId }: PeerGra
           ctx.fillStyle = color;
           ctx.fill();
         }}
-        linkColor={() => COLORS.borderSubtle}
+        linkColor={() => colors.borderSubtle}
         linkWidth={1.5}
         onNodeClick={handleNodeClick}
-        backgroundColor={COLORS.deepEarth}
+        backgroundColor={colors.deepEarth}
         cooldownTicks={100}
         d3AlphaDecay={0.02}
         d3VelocityDecay={0.3}

@@ -5,21 +5,54 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS Variables matching univrs.io */
+/* CSS Variables matching univrs.io - Dark Theme (default) */
 :root {
+  /* Core palette - forest depths */
   --void: #0a0d0b;
   --deep-earth: #0f1411;
   --forest-floor: #141a16;
   --moss: #1a221d;
   --bark: #232d27;
+
+  /* Bioluminescent accents */
   --glow-cyan: #00ffd5;
   --glow-cyan-dim: rgba(0, 255, 213, 0.25);
   --glow-gold: #ffd700;
   --glow-gold-dim: rgba(255, 215, 0, 0.19);
   --spore-purple: #b088f9;
+
+  /* Text colors */
   --mycelium-white: #e8f4ec;
   --soft-gray: #8a9a8f;
+
+  /* Borders & shadows */
   --border-subtle: #2a3a30;
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  /* Core palette - light forest */
+  --void: #f8faf9;
+  --deep-earth: #f0f4f2;
+  --forest-floor: #e8eeeb;
+  --moss: #dce5e0;
+  --bark: #c8d4cd;
+
+  /* Adjusted accents for light mode */
+  --glow-cyan: #008b75;
+  --glow-cyan-dim: rgba(0, 139, 117, 0.19);
+  --glow-gold: #b8960a;
+  --glow-gold-dim: rgba(184, 150, 10, 0.15);
+  --spore-purple: #7c4dbd;
+
+  /* Text colors - inverted */
+  --mycelium-white: #1a221d;
+  --soft-gray: #5a6a5f;
+
+  /* Borders & shadows */
+  --border-subtle: #c8d4cd;
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
 html {
@@ -34,6 +67,7 @@ body {
   background: var(--void);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Animated background gradient - univrs.io signature effect */
@@ -51,6 +85,12 @@ body::before {
   pointer-events: none;
   z-index: -1;
   animation: pulse-bg 20s ease-in-out infinite alternate;
+  transition: opacity 0.3s ease;
+}
+
+/* Reduce glow intensity in light mode */
+[data-theme="light"] body::before {
+  opacity: 0.5;
 }
 
 @keyframes pulse-bg {
@@ -157,6 +197,33 @@ a:hover {
 }
 
 .btn-outline:hover {
+  border-color: var(--glow-cyan);
+  box-shadow: 0 0 10px var(--glow-cyan-dim);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+  background: var(--forest-floor);
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 150ms ease;
+  color: var(--mycelium-white);
+}
+
+.theme-toggle:hover {
+  border-color: var(--glow-cyan);
+  box-shadow: 0 0 10px var(--glow-cyan-dim);
+}
+
+.theme-toggle:focus {
+  outline: none;
   border-color: var(--glow-cyan);
   box-shadow: 0 0 10px var(--glow-cyan-dim);
 }

@@ -1,12 +1,15 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useP2P } from '@/hooks/useP2P';
+import { useTheme } from '@/hooks/useTheme';
 import { PeerGraph } from '@/components/PeerGraph';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ReputationCard } from '@/components/ReputationCard';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { NormalizedPeer } from '@/types';
 
 function App() {
   const { connected, peers, messages, sendChat, graphData } = useP2P();
+  const { theme, toggleTheme } = useTheme();
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
 
   // Memoize graph data to prevent infinite re-renders
@@ -53,6 +56,7 @@ function App() {
             <div className="text-sm font-display text-glow-cyan">
               {peers.size} peer{peers.size !== 1 ? 's' : ''} online
             </div>
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
       </header>
