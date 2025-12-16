@@ -5,12 +5,26 @@ import { PeerGraph } from '@/components/PeerGraph';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ReputationCard } from '@/components/ReputationCard';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import type { NormalizedPeer } from '@/types';
+import { OnboardingPanel } from '@/components/OnboardingPanel';
+import { CreditPanel } from '@/components/CreditPanel';
+import { GovernancePanel } from '@/components/GovernancePanel';
+import { ResourcePanel } from '@/components/ResourcePanel';
+import type { NormalizedPeer, GeneratedIdentity, VouchRequest, CreditTransfer, Proposal, Vote } from '@/types';
 
 function App() {
-  const { connected, peers, messages, sendChat, graphData } = useP2P();
+  const { connected, localPeerId, peers, messages, sendChat, graphData } = useP2P();
   const { theme, toggleTheme } = useTheme();
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showCredit, setShowCredit] = useState(false);
+  const [showGovernance, setShowGovernance] = useState(false);
+  const [showResources, setShowResources] = useState(false);
+  const [localIdentity, setLocalIdentity] = useState<GeneratedIdentity | null>(null);
+
+  const handleOnboardingComplete = useCallback((identity: GeneratedIdentity) => {
+    setLocalIdentity(identity);
+    console.log('Identity created:', identity.peerId);
+  }, []);
 
   // Memoize graph data to prevent infinite re-renders
   const { nodes, links } = useMemo(() => graphData(), [graphData]);
@@ -22,6 +36,43 @@ function App() {
   // Stable click handler that only uses the node ID
   const handleNodeClick = useCallback((nodeId: string) => {
     setSelectedPeerId(prev => prev === nodeId ? null : nodeId);
+  }, []);
+
+  // Handle vouching for a peer
+  const handleVouch = useCallback((request: VouchRequest) => {
+    console.log('Vouch request:', request);
+    // In production, this would send the vouch request via gossipsub
+    // For now, just log it
+  }, []);
+
+  // Handle direct message to a peer
+  const handleDirectMessage = useCallback((peerId: string) => {
+    setSelectedPeerId(peerId);
+    // Focus could be shifted to chat panel in a more complete implementation
+  }, []);
+
+  // Handle credit line creation
+  const handleCreateCreditLine = useCallback((peerId: string, limit: number) => {
+    console.log('Create credit line:', { peerId, limit });
+    // In production, this would send via gossipsub
+  }, []);
+
+  // Handle credit transfer
+  const handleCreditTransfer = useCallback((transfer: CreditTransfer) => {
+    console.log('Credit transfer:', transfer);
+    // In production, this would send via gossipsub
+  }, []);
+
+  // Handle proposal creation
+  const handleCreateProposal = useCallback((proposal: Omit<Proposal, 'id' | 'status' | 'createdAt' | 'votesFor' | 'votesAgainst'>) => {
+    console.log('Create proposal:', proposal);
+    // In production, this would create a proposal via gossipsub
+  }, []);
+
+  // Handle voting on a proposal
+  const handleVote = useCallback((vote: Vote) => {
+    console.log('Vote:', vote);
+    // In production, this would send vote via gossipsub
   }, []);
 
   return (
@@ -42,7 +93,7 @@ function App() {
               <p className="text-sm text-soft-gray font-body">P2P Agent Dashboard</p>
             </div>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div
                 className={`w-2 h-2 rounded-full ${
@@ -56,6 +107,42 @@ function App() {
             <div className="text-sm font-display text-glow-cyan">
               {peers.size} peer{peers.size !== 1 ? 's' : ''} online
             </div>
+            <button
+              onClick={() => setShowCredit(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="1" x2="12" y2="23" />
+                <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+              </svg>
+              Credit
+            </button>
+            <button
+              onClick={() => setShowGovernance(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 21h18M3 7v1a3 3 0 006 0V7M9 7v1a3 3 0 006 0V7M15 7v1a3 3 0 006 0V7M3 4h18v3H3z" />
+                <path d="M5 21V11M12 21V11M19 21V11" />
+              </svg>
+              Govern
+            </button>
+            <button
+              onClick={() => setShowResources(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24" />
+              </svg>
+              Resources
+            </button>
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm"
+            >
+              {localIdentity ? 'New Identity' : 'Join Network'}
+            </button>
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
@@ -80,7 +167,10 @@ function App() {
             <div className="flex-shrink-0">
               <ReputationCard
                 peer={selectedPeer}
+                localPeerId={localPeerId}
                 onClose={() => setSelectedPeerId(null)}
+                onVouch={handleVouch}
+                onMessage={handleDirectMessage}
               />
             </div>
 
@@ -95,6 +185,45 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Onboarding Modal */}
+      {showOnboarding && (
+        <OnboardingPanel
+          onComplete={handleOnboardingComplete}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
+
+      {/* Credit Panel Modal */}
+      {showCredit && (
+        <CreditPanel
+          localPeerId={localPeerId}
+          peers={peers}
+          onCreateCreditLine={handleCreateCreditLine}
+          onTransfer={handleCreditTransfer}
+          onClose={() => setShowCredit(false)}
+        />
+      )}
+
+      {/* Governance Panel Modal */}
+      {showGovernance && (
+        <GovernancePanel
+          localPeerId={localPeerId}
+          peers={peers}
+          onCreateProposal={handleCreateProposal}
+          onVote={handleVote}
+          onClose={() => setShowGovernance(false)}
+        />
+      )}
+
+      {/* Resource Panel Modal */}
+      {showResources && (
+        <ResourcePanel
+          localPeerId={localPeerId}
+          peers={peers}
+          onClose={() => setShowResources(false)}
+        />
+      )}
     </div>
   );
 }

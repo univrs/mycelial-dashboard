@@ -6,10 +6,11 @@
 
 A **production-ready Peer-to-Peer agent network** implementing Mycelial Economics principles for Univrs.io. This system enables autonomous agents to discover, connect, and coordinate resources using biological network patterns.
 
-**Current Status**: MVP functional (~70% complete)
+**Current Status**: Phase 6 UI Complete (~85% overall)
 - 3+ nodes can discover each other and exchange messages
-- Web dashboard shows live peer graph and chat
+- Web dashboard with full economics UI (onboarding, reputation, credit, governance, resources)
 - 40 passing tests across workspace
+- Univrs.io design system with dark/light theme
 
 ## Architecture
 
@@ -17,10 +18,17 @@ A **production-ready Peer-to-Peer agent network** implementing Mycelial Economic
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    MYCELIAL P2P BOOTSTRAP                           │
 ├─────────────────────────────────────────────────────────────────────┤
+│  Layer 5: Economics UI (React Components)               [COMPLETE]  │
+│    • OnboardingPanel - Peer creation wizard                         │
+│    • ReputationCard - Vouching & contribution stats                 │
+│    • CreditPanel - Mutual credit management                         │
+│    • GovernancePanel - Proposals & voting                           │
+│    • ResourcePanel - Network resource metrics                       │
+├─────────────────────────────────────────────────────────────────────┤
 │  Layer 4: Web Dashboard (React + WebSocket)              [WORKING]  │
 │    • Real-time peer visualization (D3 force graph)                  │
 │    • P2P Chat with local echo                                       │
-│    • Connection status indicator                                    │
+│    • Theme toggle (dark/light mode)                                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Layer 3: HTTP/WebSocket Server (Axum)                   [WORKING]  │
 │    • WebSocket at /ws for real-time events                          │
@@ -49,96 +57,103 @@ A **production-ready Peer-to-Peer agent network** implementing Mycelial Economic
 | P2P Network | libp2p 0.54 (gossipsub, kademlia, mdns) | Complete |
 | State Store | SQLite + sqlx + LRU cache | Complete |
 | HTTP Server | Axum + tokio | Complete |
-| Dashboard | React 18 + Vite + TailwindCSS | 60% |
+| Dashboard | React 18 + Vite + TailwindCSS | 90% |
+| Economics UI | React Components (Phase 6) | Complete |
 | WASM Bridge | wasm-bindgen | Deferred |
 
-## Cargo Workspace Structure
+## Project Structure
 
 ```
-mycelial-p2p-bootstrap/
-├── Cargo.toml                 # Workspace root
+mycelial-dashboard/
 ├── CLAUDE.md                  # AI context (this file)
 ├── ROADMAP.md                 # Implementation progress
-├── crates/
-│   ├── mycelial-core/         # Core types (3,000 LOC, 23 tests)
-│   │   └── src/
-│   │       ├── lib.rs         # Module exports
-│   │       ├── identity.rs    # Keypair, PublicKey, Did, Signed<T>
-│   │       ├── content.rs     # ContentId, MerkleNode, MerkleTreeBuilder
-│   │       ├── module.rs      # MyceliaModule trait, ModuleRegistry
-│   │       ├── event.rs       # Event, EventType, EventFilter
-│   │       ├── config.rs      # NodeConfig, NetworkConfig, StorageConfig
-│   │       ├── message.rs     # Message, MessageType, generic messages
-│   │       └── error.rs       # MycelialError (30+ variants)
-│   │
-│   ├── mycelial-network/      # libp2p networking (1,400 LOC, 4 tests)
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── service.rs     # NetworkService (655 LOC)
-│   │       └── behaviour.rs   # MyceliaBehaviour composite
-│   │
-│   ├── mycelial-state/        # Persistence (1,500 LOC, 13 tests)
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── store.rs       # SqliteStore with sqlx
-│   │       ├── cache.rs       # LRU cache for hot data
-│   │       └── sync.rs        # Vector clocks, CRDT resolution
-│   │
-│   ├── mycelial-protocol/     # Message protocols (scaffolded)
-│   │   └── src/lib.rs         # CBOR serialization helpers
-│   │
-│   ├── mycelial-wasm/         # Browser bridge (deferred)
-│   │   └── src/lib.rs
-│   │
-│   └── mycelial-node/         # Main binary (400 LOC)
-│       └── src/
-│           ├── main.rs        # CLI, event loop, graceful shutdown
-│           └── server/
-│               ├── mod.rs     # Axum router with CORS
-│               ├── websocket.rs # WebSocket handler, local echo
-│               └── messages.rs  # WsMessage, ClientMessage types
+├── .claude/
+│   └── commands/              # Claude-flow custom commands
+│       ├── sprint-backend.md  # Backend integration sprint
+│       ├── sprint-test.md     # Testing sprint
+│       └── sprint-deploy.md   # Deployment sprint
 │
 ├── dashboard/                  # React frontend
 │   ├── package.json
 │   ├── vite.config.ts
+│   ├── tailwind.config.js     # Univrs.io design tokens
 │   └── src/
-│       ├── App.tsx
-│       ├── types.ts           # TypeScript matching Rust structs
+│       ├── App.tsx            # Main app with all panels
+│       ├── main.tsx           # Entry point
+│       ├── index.css          # Global styles + CSS variables
+│       ├── types.ts           # TypeScript types (Phase 6 complete)
 │       ├── components/
-│       │   ├── PeerGraph.tsx  # D3 force-directed graph
-│       │   ├── ChatPanel.tsx  # Message list + send input
-│       │   └── ReputationCard.tsx # Peer details sidebar
+│       │   ├── PeerGraph.tsx      # D3 force-directed graph
+│       │   ├── ChatPanel.tsx      # Message list + send input
+│       │   ├── ReputationCard.tsx # Peer details + vouching
+│       │   ├── ThemeToggle.tsx    # Dark/light mode switch
+│       │   ├── OnboardingPanel.tsx # Peer creation wizard
+│       │   ├── QRCode.tsx         # SVG QR code generator
+│       │   ├── CreditPanel.tsx    # Mutual credit management
+│       │   ├── GovernancePanel.tsx # Proposals & voting
+│       │   └── ResourcePanel.tsx  # Network resource metrics
 │       └── hooks/
-│           └── useP2P.ts      # WebSocket + REST hook
+│           ├── useP2P.ts      # WebSocket + REST hook
+│           └── useTheme.ts    # Theme management hook
 │
-└── docs/
-    └── architecture/
-        └── ADR-001-workspace-structure.md
+└── crates/                    # Rust backend (separate repo)
+    ├── mycelial-core/         # Core types (23 tests)
+    ├── mycelial-network/      # libp2p networking (4 tests)
+    ├── mycelial-state/        # SQLite persistence (13 tests)
+    ├── mycelial-protocol/     # Message protocols
+    └── mycelial-node/         # Main binary
 ```
+
+## Dashboard Components (Phase 6)
+
+### OnboardingPanel
+Multi-step wizard for new peer creation:
+- Step 0: Welcome screen
+- Step 1: Identity generation (Web Crypto API)
+- Step 2: Peer ID display, QR code, invite links
+- Step 3: Reputation building guide
+
+### ReputationCard
+Enhanced peer details with vouching:
+- Reputation tier visualization (Excellent/Good/Neutral/Poor/Untrusted)
+- Contribution stats (contributions, interactions, vouches)
+- Vouch button with stake slider modal
+- Direct message button
+
+### CreditPanel
+Mutual credit management:
+- Credit Lines tab - view existing lines with utilization bars
+- Transfer tab - send credits with amount and memo
+- History tab - transaction log with timestamps
+- Create credit line modal
+
+### GovernancePanel
+Proposal and voting system:
+- Active/Passed/All proposal filtering
+- Vote For/Against buttons with weight
+- Quorum progress visualization
+- Create proposal modal with duration and quorum settings
+
+### ResourcePanel
+Network resource metrics:
+- Overview - pool stats and top contributors
+- My Resources - bandwidth/storage/compute metrics
+- Network - per-peer contributions
 
 ## Build & Run Commands
 
 ```bash
-# Build all crates
-cargo build --release
-
-# Run tests
-cargo test --workspace
-
-# Start bootstrap node
-cargo run --release --bin mycelial-node -- \
-  --bootstrap --name "Bootstrap" --port 9000 --http-port 8080
-
-# Start peer node (auto port selection)
-cargo run --release --bin mycelial-node -- \
-  --name "Alice" --connect "/ip4/127.0.0.1/tcp/9000"
-
-# Start another peer
-cargo run --release --bin mycelial-node -- \
-  --name "Bob" --connect "/ip4/127.0.0.1/tcp/9000"
-
-# Start dashboard (separate terminal)
+# Dashboard development
 cd dashboard && pnpm install && pnpm dev
+
+# Build dashboard for production
+cd dashboard && pnpm build
+
+# Type check
+cd dashboard && npx tsc --noEmit
+
+# Run linting
+cd dashboard && pnpm lint
 ```
 
 ## Gossipsub Topics
@@ -146,9 +161,12 @@ cd dashboard && pnpm install && pnpm dev
 | Topic | Purpose | Status |
 |-------|---------|--------|
 | `/mycelial/1.0.0/chat` | Broadcast chat messages | Working |
-| `/mycelial/1.0.0/direct` | Direct messages (not delivered back to sender) | Working |
-| `/mycelial/1.0.0/reputation` | Reputation score updates | Planned |
-| `/mycelial/1.0.0/credit` | Mutual credit transactions | Planned |
+| `/mycelial/1.0.0/direct` | Direct messages | Working |
+| `/mycelial/1.0.0/reputation` | Reputation updates | UI Ready |
+| `/mycelial/1.0.0/credit` | Credit transactions | UI Ready |
+| `/mycelial/1.0.0/vouch` | Vouch propagation | UI Ready |
+| `/mycelial/1.0.0/governance` | Proposals & votes | UI Ready |
+| `/mycelial/1.0.0/resources` | Resource metrics | UI Ready |
 
 ## WebSocket Protocol
 
@@ -160,6 +178,11 @@ type WsMessage =
   | { type: "peer_left", peer_id: string }
   | { type: "chat_message", id: string, from: string, from_name: string, content: string, timestamp: number }
   | { type: "stats", peer_count: number, message_count: number, uptime_seconds: number }
+  // Phase 7: New message types for economics
+  | { type: "vouch_received", request: VouchRequest }
+  | { type: "credit_update", line: CreditLine }
+  | { type: "proposal_update", proposal: Proposal }
+  | { type: "resource_update", metrics: ResourceMetrics }
 ```
 
 ### Client -> Server Messages
@@ -169,62 +192,70 @@ type ClientMessage =
   | { type: "get_peers" }
   | { type: "get_stats" }
   | { type: "subscribe", topic: string }
-```
-
-## Key Implementation Details
-
-### Local Echo for Chat
-Gossipsub doesn't deliver messages back to the sender. The WebSocket handler broadcasts a local echo to all connected clients after successful publish:
-
-```rust
-// crates/mycelial-node/src/server/websocket.rs:128
-let echo_msg = WsMessage::ChatMessage {
-    id: message_id,
-    from: state.local_peer_id.to_string(),
-    from_name: state.node_name.clone(),
-    to: to.clone(),
-    content: content.clone(),
-    timestamp,
-};
-state.event_tx.send(echo_msg)?;
-```
-
-### Gossipsub Mesh Configuration
-Optimized for small networks (1-10 peers):
-
-```rust
-// crates/mycelial-network/src/service.rs
-mesh_n: 2,           // Target peers in mesh
-mesh_n_low: 1,       // Min before grafting
-mesh_n_high: 4,      // Max before pruning
-mesh_outbound_min: 0 // Allow zero outbound (small network)
-```
-
-### Auto Port Selection
-When `--port` is not specified, the node finds an available port:
-
-```rust
-// crates/mycelial-node/src/main.rs
-let port = args.port.unwrap_or_else(|| {
-    (9001..9100).find(|p| TcpListener::bind(("0.0.0.0", *p)).is_ok())
-        .unwrap_or(9001)
-});
+  // Phase 7: New message types for economics
+  | { type: "send_vouch", request: VouchRequest }
+  | { type: "create_credit_line", peerId: string, limit: number }
+  | { type: "transfer_credit", transfer: CreditTransfer }
+  | { type: "create_proposal", proposal: Proposal }
+  | { type: "cast_vote", vote: Vote }
 ```
 
 ## Claude Flow Integration
 
-This project supports AI-assisted development with claude-flow for multi-agent coordination.
+This project uses claude-flow for AI-assisted development with multi-agent coordination.
 
-### Running with Claude Flow
+### Quick Start Commands
 ```bash
-# Initialize swarm for development tasks
-npx claude-flow@alpha swarm "Fix bug in peer discovery"
+# Initialize a development swarm
+npx claude-flow@alpha swarm init --topology mesh
 
-# Task orchestration
-npx claude-flow@alpha task orchestrate "Implement reputation system"
+# Run a backend integration sprint
+npx claude-flow@alpha task orchestrate "Implement vouch protocol" --strategy adaptive
+
+# Run tests with swarm coordination
+npx claude-flow@alpha task orchestrate "Run all tests and fix failures" --priority high
+```
+
+### Development Sprints
+
+#### Sprint 1: Backend Protocol Integration
+```bash
+npx claude-flow@alpha swarm init --topology hierarchical --maxAgents 5
+
+# Spawn specialized agents
+npx claude-flow@alpha agent spawn --type coder --name "protocol-dev"
+npx claude-flow@alpha agent spawn --type tester --name "protocol-test"
+npx claude-flow@alpha agent spawn --type reviewer --name "code-review"
+
+# Orchestrate tasks
+npx claude-flow@alpha task orchestrate "Implement vouch gossipsub protocol" --strategy sequential
+npx claude-flow@alpha task orchestrate "Implement credit gossipsub protocol" --strategy sequential
+npx claude-flow@alpha task orchestrate "Implement governance gossipsub protocol" --strategy sequential
+```
+
+#### Sprint 2: WebSocket Bridge
+```bash
+npx claude-flow@alpha task orchestrate "Add vouch message handlers to WebSocket" --priority high
+npx claude-flow@alpha task orchestrate "Add credit message handlers to WebSocket" --priority high
+npx claude-flow@alpha task orchestrate "Add governance message handlers to WebSocket" --priority high
+npx claude-flow@alpha task orchestrate "Connect dashboard callbacks to real WebSocket" --priority high
+```
+
+#### Sprint 3: Integration Testing
+```bash
+npx claude-flow@alpha swarm init --topology mesh --maxAgents 8
+
+npx claude-flow@alpha agent spawn --type tester --name "integration-test"
+npx claude-flow@alpha agent spawn --type analyst --name "test-analyzer"
+
+npx claude-flow@alpha task orchestrate "Write integration tests for vouch flow" --strategy parallel
+npx claude-flow@alpha task orchestrate "Write integration tests for credit flow" --strategy parallel
+npx claude-flow@alpha task orchestrate "Write integration tests for governance flow" --strategy parallel
+npx claude-flow@alpha task orchestrate "Write E2E tests for dashboard" --strategy parallel
 ```
 
 ### Agent Types for This Project
+
 | Agent | Use Case |
 |-------|----------|
 | `coder` | Implement Rust/TypeScript features |
@@ -232,43 +263,89 @@ npx claude-flow@alpha task orchestrate "Implement reputation system"
 | `reviewer` | Code review and quality checks |
 | `architect` | Design decisions, ADRs |
 | `researcher` | Explore libp2p docs, patterns |
+| `analyst` | Performance analysis, bottlenecks |
 
 ### Memory Namespaces
 ```
-mycelial-p2p/architecture  # Design decisions
-mycelial-p2p/bugs          # Known issues
-mycelial-p2p/progress      # Implementation status
+mycelial-p2p/architecture    # Design decisions
+mycelial-p2p/bugs            # Known issues
+mycelial-p2p/progress        # Implementation status
+mycelial-p2p/sprint-1        # Backend protocol sprint
+mycelial-p2p/sprint-2        # WebSocket bridge sprint
+mycelial-p2p/sprint-3        # Integration testing sprint
 ```
 
-## Next Steps (Phase 6: Economics Bootstrap)
+## Next Phase: Backend Integration (Phase 7)
 
-See [ROADMAP.md](./ROADMAP.md#phase-6-mycelial-economics-bootstrap-0---next-phase) for details.
+The UI layer for all economics features is complete. The next phase focuses on backend integration:
 
-1. **Onboarding Flow** - Web-based peer creation, QR codes, invite links
-2. **Reputation Seeding** - Initial scores, vouching system, contribution tracking
-3. **Mutual Credit** - Credit line creation, transfer UI, visualization
-4. **Resource Sharing** - Bandwidth/storage contribution metrics
-5. **Governance** - Proposal creation, voting, quorum decisions
+### 7.1 Gossipsub Protocols
+- [ ] Vouch protocol (propagate vouches through network)
+- [ ] Credit protocol (credit line creation, transfers)
+- [ ] Governance protocol (proposals, votes, results)
+- [ ] Resource protocol (metrics aggregation)
+
+### 7.2 WebSocket Bridge Extensions
+- [ ] Handle vouch messages (send/receive)
+- [ ] Handle credit messages (lines, transfers)
+- [ ] Handle governance messages (proposals, votes)
+- [ ] Handle resource updates (metrics)
+
+### 7.3 State Persistence
+- [ ] Vouch storage in SQLite
+- [ ] Credit line storage with balances
+- [ ] Proposal storage with vote counts
+- [ ] Resource metrics aggregation
+
+### 7.4 Integration Testing
+- [ ] Multi-node vouch propagation tests
+- [ ] Credit transfer flow tests
+- [ ] Governance quorum tests
+- [ ] E2E dashboard tests (Playwright)
 
 ## Testing
 
 ```bash
-# Run all tests
-cargo test --workspace
+# Run dashboard tests
+cd dashboard && pnpm test
 
-# Run specific crate tests
-cargo test -p mycelial-core
-cargo test -p mycelial-network
-cargo test -p mycelial-state
+# Type check
+cd dashboard && npx tsc --noEmit
+
+# Build verification
+cd dashboard && pnpm build
+
+# Run Rust tests (if backend is present)
+cargo test --workspace
 
 # Run with logging
 RUST_LOG=debug cargo test --workspace -- --nocapture
 ```
 
-**Test Summary**: 40 tests passing
-- mycelial-core: 23 tests
-- mycelial-network: 4 tests
-- mycelial-state: 13 tests
+**Dashboard Build**: 1071 modules, 1.90s build time
+
+## Design System
+
+The dashboard uses the Univrs.io "Organic Bioluminescence" design system:
+
+### Color Palette (CSS Variables)
+```css
+--void: #0a0a0f           /* Deep space background */
+--deep-earth: #12121a     /* Card backgrounds */
+--forest-floor: #1a1a24   /* Elevated surfaces */
+--moss: #252532           /* Interactive elements */
+--bark: #3a3a4a           /* Borders, dividers */
+--soft-gray: #8b8b9b      /* Secondary text */
+--mycelium-white: #e8e8ec /* Primary text */
+--glow-cyan: #00d4aa      /* Primary accent */
+--glow-gold: #ffd700      /* Secondary accent */
+--spore-purple: #9b59b6   /* Tertiary accent */
+```
+
+### Typography
+- Display: Space Grotesk (headings, stats)
+- Body: Inter (paragraphs, UI text)
+- Mono: JetBrains Mono (code, peer IDs)
 
 ## Troubleshooting
 
@@ -277,12 +354,16 @@ RUST_LOG=debug cargo test --workspace -- --nocapture
 2. Ensure node is running with `--http-port 8080`
 3. Check browser console for CORS errors
 
-### Peers not discovering each other
-1. Ensure mDNS is working (same local network)
-2. Check Kademlia bootstrap with `--connect` flag
-3. Look for "Mesh peer added" in logs
+### Build failures
+1. Run `npx tsc --noEmit` to check for type errors
+2. Check for unused imports/variables
+3. Verify all component props match their interfaces
 
-### Messages not appearing
-1. Check gossipsub mesh formation in logs
-2. Verify topic subscription on both nodes
-3. Local echo should show sender's own messages
+### Theme not switching
+1. Check CSS variables are defined in `index.css`
+2. Verify `data-theme` attribute on document root
+3. Check localStorage for saved theme preference
+
+---
+
+*Last Updated: 2025-12-16 - Phase 6 UI complete, Phase 7 backend integration next*

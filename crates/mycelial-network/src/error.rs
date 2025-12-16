@@ -73,6 +73,10 @@ pub enum NetworkError {
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Serialization error
+    #[error("Serialization error: {0}")]
+    Serialization(String),
 }
 
 impl<T> From<TransportError<T>> for NetworkError

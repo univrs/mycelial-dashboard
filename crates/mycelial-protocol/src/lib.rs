@@ -1,9 +1,41 @@
 //! Mycelial Protocol - Message serialization and protocol definitions
 //!
 //! This crate handles the serialization and deserialization of network messages.
+//!
+//! # Economics Protocol Messages
+//!
+//! This crate defines messages for the Mycelial Economics system:
+//!
+//! - [`messages::VouchMessage`] - Reputation vouching protocol
+//! - [`messages::CreditMessage`] - Mutual credit protocol
+//! - [`messages::GovernanceMessage`] - Governance proposals and voting
+//! - [`messages::ResourceMessage`] - Resource sharing metrics
+//!
+//! # Gossipsub Topics
+//!
+//! Use [`messages::topics`] for the topic names:
+//! - `/mycelial/1.0.0/vouch` - Vouch/reputation messages
+//! - `/mycelial/1.0.0/credit` - Credit transactions
+//! - `/mycelial/1.0.0/governance` - Governance messages
+//! - `/mycelial/1.0.0/resource` - Resource metrics
 
 pub mod codec;
 pub mod messages;
+
+// Re-export message types for convenience
+pub use messages::{
+    // Topics
+    topics,
+    // Vouch protocol
+    VouchMessage, VouchRequest, VouchAck, ReputationUpdate, ReputationChangeReason,
+    // Credit protocol
+    CreditMessage, CreateCreditLine, CreditLineAck, CreditTransfer, CreditTransferAck, CreditLineUpdate,
+    // Governance protocol
+    GovernanceMessage, CreateProposal, ProposalType, CastVote, Vote, ProposalUpdate, ProposalStatus, ProposalExecuted,
+    // Resource protocol
+    ResourceMessage, ResourceContribution, ResourceType, ResourceMetrics,
+    BandwidthMetrics, StorageMetrics, ComputeMetrics, ResourcePoolUpdate, ContributorSummary,
+};
 
 use mycelial_core::{Message, MycelialError, Result};
 

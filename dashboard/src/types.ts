@@ -68,3 +68,129 @@ export interface NormalizedPeer {
   location?: Location;
   addresses: string[];
 }
+
+// Phase 6: Onboarding types
+export interface GeneratedIdentity {
+  peerId: string;
+  publicKey: string;
+  privateKey: string;
+  createdAt: number;
+}
+
+export interface InviteLink {
+  bootstrapAddress: string;
+  inviteCode: string;
+  expiresAt?: number;
+  createdBy?: string;
+}
+
+export interface OnboardingStep {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+}
+
+// Phase 6: Reputation types
+export interface ReputationScore {
+  score: number;
+  tier: 'excellent' | 'good' | 'neutral' | 'poor' | 'untrusted';
+  contributions: number;
+  interactions: number;
+  vouches: number;
+  lastUpdated: number;
+}
+
+export interface VouchRequest {
+  fromPeerId: string;
+  toPeerId: string;
+  message?: string;
+  stake: number;
+  timestamp: number;
+}
+
+// Phase 6: Mutual Credit types
+export interface CreditLine {
+  id: string;
+  peerId1: string;
+  peerId2: string;
+  limit: number;
+  balance: number;
+  createdAt: number;
+  lastTransaction?: number;
+}
+
+export interface CreditTransfer {
+  id: string;
+  from: string;
+  to: string;
+  amount: number;
+  memo?: string;
+  timestamp: number;
+}
+
+// Phase 6: Governance types
+export interface Proposal {
+  id: string;
+  title: string;
+  description: string;
+  proposer: string;
+  createdAt: number;
+  expiresAt: number;
+  status: 'active' | 'passed' | 'rejected' | 'expired';
+  votesFor: number;
+  votesAgainst: number;
+  quorum: number;
+}
+
+export interface Vote {
+  proposalId: string;
+  voterId: string;
+  vote: 'for' | 'against' | 'abstain';
+  weight: number;
+  timestamp: number;
+}
+
+// Phase 6.4: Resource Sharing types
+export interface ResourceContribution {
+  peerId: string;
+  resourceType: 'bandwidth' | 'storage' | 'compute';
+  amount: number;
+  unit: string;
+  timestamp: number;
+}
+
+export interface ResourceMetrics {
+  peerId: string;
+  bandwidth: {
+    uploaded: number;  // bytes
+    downloaded: number;
+    uploadRate: number;  // bytes/sec
+    downloadRate: number;
+  };
+  storage: {
+    provided: number;  // bytes
+    used: number;
+    available: number;
+  };
+  compute: {
+    tasksCompleted: number;
+    averageLatency: number;  // ms
+    cpuContributed: number;  // core-hours
+  };
+  uptime: number;  // seconds
+  lastUpdated: number;
+}
+
+export interface ResourcePool {
+  totalBandwidth: number;
+  totalStorage: number;
+  totalCompute: number;
+  activeContributors: number;
+  topContributors: {
+    peerId: string;
+    peerName: string;
+    contribution: number;
+    resourceType: string;
+  }[];
+}

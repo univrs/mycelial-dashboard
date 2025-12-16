@@ -254,10 +254,16 @@ impl NetworkService {
         info!("Gossipsub config: mesh_outbound_min=0, mesh_n=2, mesh_n_low=1, mesh_n_high=4 (optimized for small networks)");
 
         let topics = [
+            // Core messaging topics
             "/mycelial/1.0.0/chat",
             "/mycelial/1.0.0/announce",
             "/mycelial/1.0.0/reputation",
             "/mycelial/1.0.0/direct",
+            // Economics protocol topics (Phase 7)
+            "/mycelial/1.0.0/vouch",      // Vouch/reputation delegation
+            "/mycelial/1.0.0/credit",     // Mutual credit transactions
+            "/mycelial/1.0.0/governance", // Proposals and voting
+            "/mycelial/1.0.0/resource",   // Resource sharing metrics
         ];
         for topic_str in topics {
             let topic = libp2p::gossipsub::IdentTopic::new(topic_str);

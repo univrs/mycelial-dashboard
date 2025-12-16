@@ -51,6 +51,7 @@
 
 pub mod behaviour;
 pub mod config;
+pub mod economics;
 pub mod error;
 pub mod event;
 pub mod peer;
@@ -60,6 +61,7 @@ pub mod transport;
 // Re-exports
 pub use behaviour::{MycelialBehaviour, MycelialBehaviourEvent, topics};
 pub use config::NetworkConfig;
+pub use economics::{EconomicsEvent, EconomicsHandler, economics_topics, is_economics_topic, parse_economics_message};
 pub use error::{NetworkError, Result};
 pub use event::{NetworkEvent, NetworkStats};
 pub use peer::{ConnectionState, PeerInfo, PeerManager};
