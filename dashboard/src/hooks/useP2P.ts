@@ -4,6 +4,7 @@ import type { ChatMessage, GraphNode, GraphLink, NormalizedPeer } from '../types
 interface UseP2POptions {
   url?: string;
   reconnectInterval?: number;
+  maxReconnectAttempts?: number;
   apiUrl?: string;
 }
 
@@ -36,10 +37,13 @@ export function useP2P(options: UseP2POptions = {}) {
     url = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws',
     apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080',
     reconnectInterval = 3000,
+    maxReconnectAttempts = 5,
   } = options;
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number>();
+  const reconnectAttemptsRef = useRef(0);
+  const isConnectingRef = useRef(false);
 
   const [state, setState] = useState<P2PState>({
     connected: false,
@@ -142,40 +146,70 @@ export function useP2P(options: UseP2POptions = {}) {
   }, []);
 
   const connect = useCallback(() => {
+    // Prevent multiple simultaneous connection attempts
+    if (isConnectingRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
-    console.log('Connecting to WebSocket:', url);
-    const ws = new WebSocket(url);
+    // Check if we've exceeded max reconnect attempts
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.warn(`P2P: Max reconnect attempts (${maxReconnectAttempts}) reached. Stopping reconnection.`);
+      return;
+    }
 
-    ws.onopen = () => {
-      console.log('WebSocket connected!');
-      setState(s => ({ ...s, connected: true }));
-      // Fetch data via REST (more reliable)
-      fetchInfo();
-      fetchPeers();
-    };
+    isConnectingRef.current = true;
+    console.log(`Connecting to P2P WebSocket: ${url} (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
 
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setState(s => ({ ...s, connected: false }));
-      reconnectTimerRef.current = window.setTimeout(connect, reconnectInterval);
-    };
+    try {
+      const ws = new WebSocket(url);
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+      ws.onopen = () => {
+        console.log('P2P WebSocket connected!');
+        isConnectingRef.current = false;
+        reconnectAttemptsRef.current = 0; // Reset on successful connection
+        setState(s => ({ ...s, connected: true }));
+        // Fetch data via REST (more reliable)
+        fetchInfo();
+        fetchPeers();
+      };
 
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        handleMessage(message);
-      } catch (e) {
-        console.error('Failed to parse message:', e, event.data);
-      }
-    };
+      ws.onclose = (event) => {
+        console.log('P2P WebSocket disconnected:', event.code);
+        isConnectingRef.current = false;
+        wsRef.current = null;
+        setState(s => ({ ...s, connected: false }));
 
-    wsRef.current = ws;
-  }, [url, reconnectInterval, handleMessage, fetchPeers, fetchInfo]);
+        // Auto-reconnect with exponential backoff if not a clean close
+        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current++;
+          // Exponential backoff: 3s, 6s, 12s, 24s, 48s...
+          const backoffDelay = reconnectInterval * Math.pow(2, reconnectAttemptsRef.current - 1);
+          console.log(`P2P: Reconnecting in ${backoffDelay / 1000}s...`);
+          reconnectTimerRef.current = window.setTimeout(connect, backoffDelay);
+        }
+      };
+
+      ws.onerror = () => {
+        // Don't log the full error object as it's not useful
+        console.warn('P2P WebSocket connection error');
+        isConnectingRef.current = false;
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          handleMessage(message);
+        } catch (e) {
+          console.error('Failed to parse message:', e, event.data);
+        }
+      };
+
+      wsRef.current = ws;
+    } catch (err) {
+      console.error('P2P WebSocket connection error:', err);
+      isConnectingRef.current = false;
+    }
+  }, [url, reconnectInterval, maxReconnectAttempts, handleMessage, fetchPeers, fetchInfo]);
 
   const sendChat = useCallback((content: string, to?: string) => {
     console.log('sendChat called:', { content, to, readyState: wsRef.current?.readyState });
@@ -212,9 +246,21 @@ export function useP2P(options: UseP2POptions = {}) {
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = undefined;
     }
-    wsRef.current?.close();
+    reconnectAttemptsRef.current = 0;
+    isConnectingRef.current = false;
+    if (wsRef.current) {
+      wsRef.current.close(1000, 'Client disconnect');
+      wsRef.current = null;
+    }
   }, []);
+
+  // Reset connection state and retry connecting
+  const resetConnection = useCallback(() => {
+    disconnect();
+    setTimeout(() => connect(), 100);
+  }, [disconnect, connect]);
 
   useEffect(() => {
     connect();
@@ -246,6 +292,7 @@ export function useP2P(options: UseP2POptions = {}) {
     ...state,
     sendChat,
     disconnect,
+    resetConnection,
     graphData,
     refreshPeers: fetchPeers,
   };

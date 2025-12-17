@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useP2P } from '@/hooks/useP2P';
 import { useTheme } from '@/hooks/useTheme';
+import { useOrchestrator } from '@/hooks/useOrchestrator';
 import { PeerGraph } from '@/components/PeerGraph';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ReputationCard } from '@/components/ReputationCard';
@@ -9,16 +10,34 @@ import { OnboardingPanel } from '@/components/OnboardingPanel';
 import { CreditPanel } from '@/components/CreditPanel';
 import { GovernancePanel } from '@/components/GovernancePanel';
 import { ResourcePanel } from '@/components/ResourcePanel';
+import { WorkloadList } from '@/components/WorkloadList';
+import { NodeStatus } from '@/components/NodeStatus';
+import { ClusterOverview } from '@/components/ClusterOverview';
 import type { NormalizedPeer, GeneratedIdentity, VouchRequest, CreditTransfer, Proposal, Vote } from '@/types';
 
 function App() {
   const { connected, localPeerId, peers, messages, sendChat, graphData } = useP2P();
   const { theme, toggleTheme } = useTheme();
+  const {
+    workloads,
+    nodes: orchestratorNodes,
+    clusterMetrics,
+    connected: orchestratorConnected,
+    loading: orchestratorLoading,
+    error: orchestratorError,
+    cancelWorkload,
+    retryWorkload,
+    refreshData: refreshOrchestratorData,
+    clearError: clearOrchestratorError,
+  } = useOrchestrator();
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showCredit, setShowCredit] = useState(false);
   const [showGovernance, setShowGovernance] = useState(false);
   const [showResources, setShowResources] = useState(false);
+  const [showWorkloads, setShowWorkloads] = useState(false);
+  const [showNodes, setShowNodes] = useState(false);
+  const [showCluster, setShowCluster] = useState(false);
   const [localIdentity, setLocalIdentity] = useState<GeneratedIdentity | null>(null);
 
   const handleOnboardingComplete = useCallback((identity: GeneratedIdentity) => {
@@ -107,6 +126,20 @@ function App() {
             <div className="text-sm font-display text-glow-cyan">
               {peers.size} peer{peers.size !== 1 ? 's' : ''} online
             </div>
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  orchestratorLoading
+                    ? 'bg-glow-gold animate-pulse'
+                    : orchestratorConnected
+                    ? 'bg-spore-purple shadow-glow-sm'
+                    : 'bg-soft-gray'
+                }`}
+              />
+              <span className="text-sm font-display text-soft-gray uppercase tracking-wider">
+                {orchestratorLoading ? 'Loading' : orchestratorConnected ? 'Orchestrator' : 'Offline'}
+              </span>
+            </div>
             <button
               onClick={() => setShowCredit(true)}
               className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
@@ -138,6 +171,39 @@ function App() {
               Resources
             </button>
             <button
+              onClick={() => setShowWorkloads(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
+              </svg>
+              Workloads
+            </button>
+            <button
+              onClick={() => setShowNodes(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="2" width="20" height="8" rx="2" />
+                <rect x="2" y="14" width="20" height="8" rx="2" />
+                <circle cx="6" cy="6" r="1" fill="currentColor" />
+                <circle cx="6" cy="18" r="1" fill="currentColor" />
+              </svg>
+              Nodes
+            </button>
+            <button
+              onClick={() => setShowCluster(true)}
+              className="btn-outline px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+              Cluster
+            </button>
+            <button
               onClick={() => setShowOnboarding(true)}
               className="btn-outline px-4 py-2 rounded-lg text-sm"
             >
@@ -147,6 +213,38 @@ function App() {
           </div>
         </div>
       </header>
+
+      {/* Orchestrator Error Banner */}
+      {orchestratorError && (
+        <div className="bg-red-500/10 border-b border-red-500/30 px-6 py-3">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span className="text-sm text-red-400">{orchestratorError}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={refreshOrchestratorData}
+                className="text-xs px-3 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+              >
+                Retry
+              </button>
+              <button
+                onClick={clearOrchestratorError}
+                className="text-red-400 hover:text-red-300 transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto p-6">
@@ -222,6 +320,34 @@ function App() {
           localPeerId={localPeerId}
           peers={peers}
           onClose={() => setShowResources(false)}
+        />
+      )}
+
+      {/* Workload List Modal */}
+      {showWorkloads && (
+        <WorkloadList
+          workloads={workloads}
+          onCancelWorkload={cancelWorkload}
+          onRetryWorkload={retryWorkload}
+          onClose={() => setShowWorkloads(false)}
+        />
+      )}
+
+      {/* Node Status Modal */}
+      {showNodes && (
+        <NodeStatus
+          nodes={orchestratorNodes}
+          onClose={() => setShowNodes(false)}
+        />
+      )}
+
+      {/* Cluster Overview Modal */}
+      {showCluster && (
+        <ClusterOverview
+          clusterMetrics={clusterMetrics}
+          nodes={orchestratorNodes}
+          workloads={workloads}
+          onClose={() => setShowCluster(false)}
         />
       )}
     </div>

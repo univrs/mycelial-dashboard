@@ -194,3 +194,112 @@ export interface ResourcePool {
     resourceType: string;
   }[];
 }
+
+// Orchestrator Types for WorkloadList, NodeStatus, ClusterOverview
+
+export type WorkloadStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type WorkloadPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface Workload {
+  id: string;
+  name: string;
+  description?: string;
+  status: WorkloadStatus;
+  priority: WorkloadPriority;
+  assignedNode?: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  progress: number; // 0-100
+  resourceRequirements: {
+    cpu: number;
+    memory: number; // bytes
+    storage: number; // bytes
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export type NodeHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'offline';
+
+export interface NodeHealth {
+  nodeId: string;
+  nodeName: string;
+  status: NodeHealthStatus;
+  lastHeartbeat: number;
+  uptime: number; // seconds
+  cpu: {
+    usage: number; // percentage 0-100
+    cores: number;
+    temperature?: number;
+  };
+  memory: {
+    used: number; // bytes
+    total: number;
+    available: number;
+  };
+  disk: {
+    used: number;
+    total: number;
+    readRate: number; // bytes/sec
+    writeRate: number;
+  };
+  network: {
+    bytesIn: number;
+    bytesOut: number;
+    connections: number;
+    latency: number; // ms
+  };
+  workloads: {
+    running: number;
+    queued: number;
+    completed: number;
+    failed: number;
+  };
+  version: string;
+  region?: string;
+}
+
+export interface ClusterMetrics {
+  clusterId: string;
+  clusterName: string;
+  totalNodes: number;
+  healthyNodes: number;
+  degradedNodes: number;
+  offlineNodes: number;
+  totalWorkloads: number;
+  runningWorkloads: number;
+  pendingWorkloads: number;
+  completedWorkloads: number;
+  failedWorkloads: number;
+  resources: {
+    totalCpu: number;
+    usedCpu: number;
+    totalMemory: number;
+    usedMemory: number;
+    totalStorage: number;
+    usedStorage: number;
+  };
+  throughput: {
+    workloadsPerHour: number;
+    avgCompletionTime: number; // ms
+    successRate: number; // percentage
+  };
+  lastUpdated: number;
+}
+
+// WebSocket event types for orchestrator
+export interface OrchestratorEvent {
+  type:
+    | 'workload_created'
+    | 'workload_updated'
+    | 'workload_completed'
+    | 'workload_failed'
+    | 'node_status'
+    | 'node_joined'
+    | 'node_left'
+    | 'cluster_metrics'
+    | 'workload_list'
+    | 'node_list';
+  data: unknown;
+  timestamp: number;
+}

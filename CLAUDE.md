@@ -1,369 +1,352 @@
-# Mycelial P2P Bootstrap System
+# Claude Code Configuration - SPARC Development Environment
 
-> **See [ROADMAP.md](./ROADMAP.md) for implementation progress tracking**
+## 🚨 CRITICAL: CONCURRENT EXECUTION & FILE MANAGEMENT
+
+**ABSOLUTE RULES**:
+1. ALL operations MUST be concurrent/parallel in a single message
+2. **NEVER save working files, text/mds and tests to the root folder**
+3. ALWAYS organize files in appropriate subdirectories
+4. **USE CLAUDE CODE'S TASK TOOL** for spawning agents concurrently, not just MCP
+
+### ⚡ GOLDEN RULE: "1 MESSAGE = ALL RELATED OPERATIONS"
+
+**MANDATORY PATTERNS:**
+- **TodoWrite**: ALWAYS batch ALL todos in ONE call (5-10+ todos minimum)
+- **Task tool (Claude Code)**: ALWAYS spawn ALL agents in ONE message with full instructions
+- **File operations**: ALWAYS batch ALL reads/writes/edits in ONE message
+- **Bash commands**: ALWAYS batch ALL terminal operations in ONE message
+- **Memory operations**: ALWAYS batch ALL memory store/retrieve in ONE message
+
+### 🎯 CRITICAL: Claude Code Task Tool for Agent Execution
+
+**Claude Code's Task tool is the PRIMARY way to spawn agents:**
+```javascript
+// ✅ CORRECT: Use Claude Code's Task tool for parallel agent execution
+[Single Message]:
+  Task("Research agent", "Analyze requirements and patterns...", "researcher")
+  Task("Coder agent", "Implement core features...", "coder")
+  Task("Tester agent", "Create comprehensive tests...", "tester")
+  Task("Reviewer agent", "Review code quality...", "reviewer")
+  Task("Architect agent", "Design system architecture...", "system-architect")
+```
+
+**MCP tools are ONLY for coordination setup:**
+- `mcp__claude-flow__swarm_init` - Initialize coordination topology
+- `mcp__claude-flow__agent_spawn` - Define agent types for coordination
+- `mcp__claude-flow__task_orchestrate` - Orchestrate high-level workflows
+
+### 📁 File Organization Rules
+
+**NEVER save to root folder. Use these directories:**
+- `/src` - Source code files
+- `/tests` - Test files
+- `/docs` - Documentation and markdown files
+- `/config` - Configuration files
+- `/scripts` - Utility scripts
+- `/examples` - Example code
 
 ## Project Overview
 
-A **production-ready Peer-to-Peer agent network** implementing Mycelial Economics principles for Univrs.io. This system enables autonomous agents to discover, connect, and coordinate resources using biological network patterns.
+This project uses SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) methodology with Claude-Flow orchestration for systematic Test-Driven Development.
 
-**Current Status**: Phase 6 UI Complete (~85% overall)
-- 3+ nodes can discover each other and exchange messages
-- Web dashboard with full economics UI (onboarding, reputation, credit, governance, resources)
-- 40 passing tests across workspace
-- Univrs.io design system with dark/light theme
+## SPARC Commands
 
-## Architecture
+### Core Commands
+- `npx claude-flow sparc modes` - List available modes
+- `npx claude-flow sparc run <mode> "<task>"` - Execute specific mode
+- `npx claude-flow sparc tdd "<feature>"` - Run complete TDD workflow
+- `npx claude-flow sparc info <mode>` - Get mode details
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    MYCELIAL P2P BOOTSTRAP                           │
-├─────────────────────────────────────────────────────────────────────┤
-│  Layer 5: Economics UI (React Components)               [COMPLETE]  │
-│    • OnboardingPanel - Peer creation wizard                         │
-│    • ReputationCard - Vouching & contribution stats                 │
-│    • CreditPanel - Mutual credit management                         │
-│    • GovernancePanel - Proposals & voting                           │
-│    • ResourcePanel - Network resource metrics                       │
-├─────────────────────────────────────────────────────────────────────┤
-│  Layer 4: Web Dashboard (React + WebSocket)              [WORKING]  │
-│    • Real-time peer visualization (D3 force graph)                  │
-│    • P2P Chat with local echo                                       │
-│    • Theme toggle (dark/light mode)                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  Layer 3: HTTP/WebSocket Server (Axum)                   [WORKING]  │
-│    • WebSocket at /ws for real-time events                          │
-│    • REST: /api/peers, /api/info, /api/stats, /health               │
-│    • Bridge P2P events to browser clients                           │
-├─────────────────────────────────────────────────────────────────────┤
-│  Layer 2: P2P Network (libp2p)                           [WORKING]  │
-│    • gossipsub for pub/sub messaging                                │
-│    • Kademlia DHT for peer discovery                                │
-│    • mDNS for local network discovery                               │
-│    • TCP + Noise + Yamux transport                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│  Layer 1: Core Types & State (Rust)                      [WORKING]  │
-│    • Identity (Ed25519, DID, Signed<T>)                             │
-│    • Content addressing (Blake3, Merkle trees)                      │
-│    • SQLite persistence with LRU cache                              │
-│    • CRDT conflict resolution                                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### Batchtools Commands
+- `npx claude-flow sparc batch <modes> "<task>"` - Parallel execution
+- `npx claude-flow sparc pipeline "<task>"` - Full pipeline processing
+- `npx claude-flow sparc concurrent <mode> "<tasks-file>"` - Multi-task processing
 
-## Technology Stack
+### Build Commands
+- `npm run build` - Build project
+- `npm run test` - Run tests
+- `npm run lint` - Linting
+- `npm run typecheck` - Type checking
 
-| Component | Technology | Status |
-|-----------|------------|--------|
-| Core Types | Rust, serde, thiserror | Complete |
-| P2P Network | libp2p 0.54 (gossipsub, kademlia, mdns) | Complete |
-| State Store | SQLite + sqlx + LRU cache | Complete |
-| HTTP Server | Axum + tokio | Complete |
-| Dashboard | React 18 + Vite + TailwindCSS | 90% |
-| Economics UI | React Components (Phase 6) | Complete |
-| WASM Bridge | wasm-bindgen | Deferred |
+## SPARC Workflow Phases
 
-## Project Structure
+1. **Specification** - Requirements analysis (`sparc run spec-pseudocode`)
+2. **Pseudocode** - Algorithm design (`sparc run spec-pseudocode`)
+3. **Architecture** - System design (`sparc run architect`)
+4. **Refinement** - TDD implementation (`sparc tdd`)
+5. **Completion** - Integration (`sparc run integration`)
 
-```
-mycelial-dashboard/
-├── CLAUDE.md                  # AI context (this file)
-├── ROADMAP.md                 # Implementation progress
-├── .claude/
-│   └── commands/              # Claude-flow custom commands
-│       ├── sprint-backend.md  # Backend integration sprint
-│       ├── sprint-test.md     # Testing sprint
-│       └── sprint-deploy.md   # Deployment sprint
-│
-├── dashboard/                  # React frontend
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tailwind.config.js     # Univrs.io design tokens
-│   └── src/
-│       ├── App.tsx            # Main app with all panels
-│       ├── main.tsx           # Entry point
-│       ├── index.css          # Global styles + CSS variables
-│       ├── types.ts           # TypeScript types (Phase 6 complete)
-│       ├── components/
-│       │   ├── PeerGraph.tsx      # D3 force-directed graph
-│       │   ├── ChatPanel.tsx      # Message list + send input
-│       │   ├── ReputationCard.tsx # Peer details + vouching
-│       │   ├── ThemeToggle.tsx    # Dark/light mode switch
-│       │   ├── OnboardingPanel.tsx # Peer creation wizard
-│       │   ├── QRCode.tsx         # SVG QR code generator
-│       │   ├── CreditPanel.tsx    # Mutual credit management
-│       │   ├── GovernancePanel.tsx # Proposals & voting
-│       │   └── ResourcePanel.tsx  # Network resource metrics
-│       └── hooks/
-│           ├── useP2P.ts      # WebSocket + REST hook
-│           └── useTheme.ts    # Theme management hook
-│
-└── crates/                    # Rust backend (separate repo)
-    ├── mycelial-core/         # Core types (23 tests)
-    ├── mycelial-network/      # libp2p networking (4 tests)
-    ├── mycelial-state/        # SQLite persistence (13 tests)
-    ├── mycelial-protocol/     # Message protocols
-    └── mycelial-node/         # Main binary
-```
+## Code Style & Best Practices
 
-## Dashboard Components (Phase 6)
+- **Modular Design**: Files under 500 lines
+- **Environment Safety**: Never hardcode secrets
+- **Test-First**: Write tests before implementation
+- **Clean Architecture**: Separate concerns
+- **Documentation**: Keep updated
 
-### OnboardingPanel
-Multi-step wizard for new peer creation:
-- Step 0: Welcome screen
-- Step 1: Identity generation (Web Crypto API)
-- Step 2: Peer ID display, QR code, invite links
-- Step 3: Reputation building guide
+## 🚀 Available Agents (54 Total)
 
-### ReputationCard
-Enhanced peer details with vouching:
-- Reputation tier visualization (Excellent/Good/Neutral/Poor/Untrusted)
-- Contribution stats (contributions, interactions, vouches)
-- Vouch button with stake slider modal
-- Direct message button
+### Core Development
+`coder`, `reviewer`, `tester`, `planner`, `researcher`
 
-### CreditPanel
-Mutual credit management:
-- Credit Lines tab - view existing lines with utilization bars
-- Transfer tab - send credits with amount and memo
-- History tab - transaction log with timestamps
-- Create credit line modal
+### Swarm Coordination
+`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`, `collective-intelligence-coordinator`, `swarm-memory-manager`
 
-### GovernancePanel
-Proposal and voting system:
-- Active/Passed/All proposal filtering
-- Vote For/Against buttons with weight
-- Quorum progress visualization
-- Create proposal modal with duration and quorum settings
+### Consensus & Distributed
+`byzantine-coordinator`, `raft-manager`, `gossip-coordinator`, `consensus-builder`, `crdt-synchronizer`, `quorum-manager`, `security-manager`
 
-### ResourcePanel
-Network resource metrics:
-- Overview - pool stats and top contributors
-- My Resources - bandwidth/storage/compute metrics
-- Network - per-peer contributions
+### Performance & Optimization
+`perf-analyzer`, `performance-benchmarker`, `task-orchestrator`, `memory-coordinator`, `smart-agent`
 
-## Build & Run Commands
+### GitHub & Repository
+`github-modes`, `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`, `workflow-automation`, `project-board-sync`, `repo-architect`, `multi-repo-swarm`
+
+### SPARC Methodology
+`sparc-coord`, `sparc-coder`, `specification`, `pseudocode`, `architecture`, `refinement`
+
+### Specialized Development
+`backend-dev`, `mobile-dev`, `ml-developer`, `cicd-engineer`, `api-docs`, `system-architect`, `code-analyzer`, `base-template-generator`
+
+### Testing & Validation
+`tdd-london-swarm`, `production-validator`
+
+### Migration & Planning
+`migration-planner`, `swarm-init`
+
+## 🎯 Claude Code vs MCP Tools
+
+### Claude Code Handles ALL EXECUTION:
+- **Task tool**: Spawn and run agents concurrently for actual work
+- File operations (Read, Write, Edit, MultiEdit, Glob, Grep)
+- Code generation and programming
+- Bash commands and system operations
+- Implementation work
+- Project navigation and analysis
+- TodoWrite and task management
+- Git operations
+- Package management
+- Testing and debugging
+
+### MCP Tools ONLY COORDINATE:
+- Swarm initialization (topology setup)
+- Agent type definitions (coordination patterns)
+- Task orchestration (high-level planning)
+- Memory management
+- Neural features
+- Performance tracking
+- GitHub integration
+
+**KEY**: MCP coordinates the strategy, Claude Code's Task tool executes with real agents.
+
+## 🚀 Quick Setup
 
 ```bash
-# Dashboard development
-cd dashboard && pnpm install && pnpm dev
-
-# Build dashboard for production
-cd dashboard && pnpm build
-
-# Type check
-cd dashboard && npx tsc --noEmit
-
-# Run linting
-cd dashboard && pnpm lint
+# Add MCP servers (Claude Flow required, others optional)
+claude mcp add claude-flow npx claude-flow@alpha mcp start
+claude mcp add ruv-swarm npx ruv-swarm mcp start  # Optional: Enhanced coordination
+claude mcp add flow-nexus npx flow-nexus@latest mcp start  # Optional: Cloud features
 ```
 
-## Gossipsub Topics
+## MCP Tool Categories
 
-| Topic | Purpose | Status |
-|-------|---------|--------|
-| `/mycelial/1.0.0/chat` | Broadcast chat messages | Working |
-| `/mycelial/1.0.0/direct` | Direct messages | Working |
-| `/mycelial/1.0.0/reputation` | Reputation updates | UI Ready |
-| `/mycelial/1.0.0/credit` | Credit transactions | UI Ready |
-| `/mycelial/1.0.0/vouch` | Vouch propagation | UI Ready |
-| `/mycelial/1.0.0/governance` | Proposals & votes | UI Ready |
-| `/mycelial/1.0.0/resources` | Resource metrics | UI Ready |
+### Coordination
+`swarm_init`, `agent_spawn`, `task_orchestrate`
 
-## WebSocket Protocol
+### Monitoring
+`swarm_status`, `agent_list`, `agent_metrics`, `task_status`, `task_results`
 
-### Server -> Client Messages
-```typescript
-type WsMessage =
-  | { type: "peers_list", peers: PeerListEntry[] }
-  | { type: "peer_joined", peer_id: string, peer_info: object }
-  | { type: "peer_left", peer_id: string }
-  | { type: "chat_message", id: string, from: string, from_name: string, content: string, timestamp: number }
-  | { type: "stats", peer_count: number, message_count: number, uptime_seconds: number }
-  // Phase 7: New message types for economics
-  | { type: "vouch_received", request: VouchRequest }
-  | { type: "credit_update", line: CreditLine }
-  | { type: "proposal_update", proposal: Proposal }
-  | { type: "resource_update", metrics: ResourceMetrics }
+### Memory & Neural
+`memory_usage`, `neural_status`, `neural_train`, `neural_patterns`
+
+### GitHub Integration
+`github_swarm`, `repo_analyze`, `pr_enhance`, `issue_triage`, `code_review`
+
+### System
+`benchmark_run`, `features_detect`, `swarm_monitor`
+
+### Flow-Nexus MCP Tools (Optional Advanced Features)
+Flow-Nexus extends MCP capabilities with 70+ cloud-based orchestration tools:
+
+**Key MCP Tool Categories:**
+- **Swarm & Agents**: `swarm_init`, `swarm_scale`, `agent_spawn`, `task_orchestrate`
+- **Sandboxes**: `sandbox_create`, `sandbox_execute`, `sandbox_upload` (cloud execution)
+- **Templates**: `template_list`, `template_deploy` (pre-built project templates)
+- **Neural AI**: `neural_train`, `neural_patterns`, `seraphina_chat` (AI assistant)
+- **GitHub**: `github_repo_analyze`, `github_pr_manage` (repository management)
+- **Real-time**: `execution_stream_subscribe`, `realtime_subscribe` (live monitoring)
+- **Storage**: `storage_upload`, `storage_list` (cloud file management)
+
+**Authentication Required:**
+- Register: `mcp__flow-nexus__user_register` or `npx flow-nexus@latest register`
+- Login: `mcp__flow-nexus__user_login` or `npx flow-nexus@latest login`
+- Access 70+ specialized MCP tools for advanced orchestration
+
+## 🚀 Agent Execution Flow with Claude Code
+
+### The Correct Pattern:
+
+1. **Optional**: Use MCP tools to set up coordination topology
+2. **REQUIRED**: Use Claude Code's Task tool to spawn agents that do actual work
+3. **REQUIRED**: Each agent runs hooks for coordination
+4. **REQUIRED**: Batch all operations in single messages
+
+### Example Full-Stack Development:
+
+```javascript
+// Single message with all agent spawning via Claude Code's Task tool
+[Parallel Agent Execution]:
+  Task("Backend Developer", "Build REST API with Express. Use hooks for coordination.", "backend-dev")
+  Task("Frontend Developer", "Create React UI. Coordinate with backend via memory.", "coder")
+  Task("Database Architect", "Design PostgreSQL schema. Store schema in memory.", "code-analyzer")
+  Task("Test Engineer", "Write Jest tests. Check memory for API contracts.", "tester")
+  Task("DevOps Engineer", "Setup Docker and CI/CD. Document in memory.", "cicd-engineer")
+  Task("Security Auditor", "Review authentication. Report findings via hooks.", "reviewer")
+  
+  // All todos batched together
+  TodoWrite { todos: [...8-10 todos...] }
+  
+  // All file operations together
+  Write "backend/server.js"
+  Write "frontend/App.jsx"
+  Write "database/schema.sql"
 ```
 
-### Client -> Server Messages
-```typescript
-type ClientMessage =
-  | { type: "send_chat", content: string, to?: string }
-  | { type: "get_peers" }
-  | { type: "get_stats" }
-  | { type: "subscribe", topic: string }
-  // Phase 7: New message types for economics
-  | { type: "send_vouch", request: VouchRequest }
-  | { type: "create_credit_line", peerId: string, limit: number }
-  | { type: "transfer_credit", transfer: CreditTransfer }
-  | { type: "create_proposal", proposal: Proposal }
-  | { type: "cast_vote", vote: Vote }
-```
+## 📋 Agent Coordination Protocol
 
-## Claude Flow Integration
+### Every Agent Spawned via Task Tool MUST:
 
-This project uses claude-flow for AI-assisted development with multi-agent coordination.
-
-### Quick Start Commands
+**1️⃣ BEFORE Work:**
 ```bash
-# Initialize a development swarm
-npx claude-flow@alpha swarm init --topology mesh
-
-# Run a backend integration sprint
-npx claude-flow@alpha task orchestrate "Implement vouch protocol" --strategy adaptive
-
-# Run tests with swarm coordination
-npx claude-flow@alpha task orchestrate "Run all tests and fix failures" --priority high
+npx claude-flow@alpha hooks pre-task --description "[task]"
+npx claude-flow@alpha hooks session-restore --session-id "swarm-[id]"
 ```
 
-### Development Sprints
-
-#### Sprint 1: Backend Protocol Integration
+**2️⃣ DURING Work:**
 ```bash
-npx claude-flow@alpha swarm init --topology hierarchical --maxAgents 5
-
-# Spawn specialized agents
-npx claude-flow@alpha agent spawn --type coder --name "protocol-dev"
-npx claude-flow@alpha agent spawn --type tester --name "protocol-test"
-npx claude-flow@alpha agent spawn --type reviewer --name "code-review"
-
-# Orchestrate tasks
-npx claude-flow@alpha task orchestrate "Implement vouch gossipsub protocol" --strategy sequential
-npx claude-flow@alpha task orchestrate "Implement credit gossipsub protocol" --strategy sequential
-npx claude-flow@alpha task orchestrate "Implement governance gossipsub protocol" --strategy sequential
+npx claude-flow@alpha hooks post-edit --file "[file]" --memory-key "swarm/[agent]/[step]"
+npx claude-flow@alpha hooks notify --message "[what was done]"
 ```
 
-#### Sprint 2: WebSocket Bridge
+**3️⃣ AFTER Work:**
 ```bash
-npx claude-flow@alpha task orchestrate "Add vouch message handlers to WebSocket" --priority high
-npx claude-flow@alpha task orchestrate "Add credit message handlers to WebSocket" --priority high
-npx claude-flow@alpha task orchestrate "Add governance message handlers to WebSocket" --priority high
-npx claude-flow@alpha task orchestrate "Connect dashboard callbacks to real WebSocket" --priority high
+npx claude-flow@alpha hooks post-task --task-id "[task]"
+npx claude-flow@alpha hooks session-end --export-metrics true
 ```
 
-#### Sprint 3: Integration Testing
-```bash
-npx claude-flow@alpha swarm init --topology mesh --maxAgents 8
+## 🎯 Concurrent Execution Examples
 
-npx claude-flow@alpha agent spawn --type tester --name "integration-test"
-npx claude-flow@alpha agent spawn --type analyst --name "test-analyzer"
+### ✅ CORRECT WORKFLOW: MCP Coordinates, Claude Code Executes
 
-npx claude-flow@alpha task orchestrate "Write integration tests for vouch flow" --strategy parallel
-npx claude-flow@alpha task orchestrate "Write integration tests for credit flow" --strategy parallel
-npx claude-flow@alpha task orchestrate "Write integration tests for governance flow" --strategy parallel
-npx claude-flow@alpha task orchestrate "Write E2E tests for dashboard" --strategy parallel
+```javascript
+// Step 1: MCP tools set up coordination (optional, for complex tasks)
+[Single Message - Coordination Setup]:
+  mcp__claude-flow__swarm_init { topology: "mesh", maxAgents: 6 }
+  mcp__claude-flow__agent_spawn { type: "researcher" }
+  mcp__claude-flow__agent_spawn { type: "coder" }
+  mcp__claude-flow__agent_spawn { type: "tester" }
+
+// Step 2: Claude Code Task tool spawns ACTUAL agents that do the work
+[Single Message - Parallel Agent Execution]:
+  // Claude Code's Task tool spawns real agents concurrently
+  Task("Research agent", "Analyze API requirements and best practices. Check memory for prior decisions.", "researcher")
+  Task("Coder agent", "Implement REST endpoints with authentication. Coordinate via hooks.", "coder")
+  Task("Database agent", "Design and implement database schema. Store decisions in memory.", "code-analyzer")
+  Task("Tester agent", "Create comprehensive test suite with 90% coverage.", "tester")
+  Task("Reviewer agent", "Review code quality and security. Document findings.", "reviewer")
+  
+  // Batch ALL todos in ONE call
+  TodoWrite { todos: [
+    {id: "1", content: "Research API patterns", status: "in_progress", priority: "high"},
+    {id: "2", content: "Design database schema", status: "in_progress", priority: "high"},
+    {id: "3", content: "Implement authentication", status: "pending", priority: "high"},
+    {id: "4", content: "Build REST endpoints", status: "pending", priority: "high"},
+    {id: "5", content: "Write unit tests", status: "pending", priority: "medium"},
+    {id: "6", content: "Integration tests", status: "pending", priority: "medium"},
+    {id: "7", content: "API documentation", status: "pending", priority: "low"},
+    {id: "8", content: "Performance optimization", status: "pending", priority: "low"}
+  ]}
+  
+  // Parallel file operations
+  Bash "mkdir -p app/{src,tests,docs,config}"
+  Write "app/package.json"
+  Write "app/src/server.js"
+  Write "app/tests/server.test.js"
+  Write "app/docs/API.md"
 ```
 
-### Agent Types for This Project
-
-| Agent | Use Case |
-|-------|----------|
-| `coder` | Implement Rust/TypeScript features |
-| `tester` | Write and run tests |
-| `reviewer` | Code review and quality checks |
-| `architect` | Design decisions, ADRs |
-| `researcher` | Explore libp2p docs, patterns |
-| `analyst` | Performance analysis, bottlenecks |
-
-### Memory Namespaces
-```
-mycelial-p2p/architecture    # Design decisions
-mycelial-p2p/bugs            # Known issues
-mycelial-p2p/progress        # Implementation status
-mycelial-p2p/sprint-1        # Backend protocol sprint
-mycelial-p2p/sprint-2        # WebSocket bridge sprint
-mycelial-p2p/sprint-3        # Integration testing sprint
+### ❌ WRONG (Multiple Messages):
+```javascript
+Message 1: mcp__claude-flow__swarm_init
+Message 2: Task("agent 1")
+Message 3: TodoWrite { todos: [single todo] }
+Message 4: Write "file.js"
+// This breaks parallel coordination!
 ```
 
-## Next Phase: Backend Integration (Phase 7)
+## Performance Benefits
 
-The UI layer for all economics features is complete. The next phase focuses on backend integration:
+- **84.8% SWE-Bench solve rate**
+- **32.3% token reduction**
+- **2.8-4.4x speed improvement**
+- **27+ neural models**
 
-### 7.1 Gossipsub Protocols
-- [ ] Vouch protocol (propagate vouches through network)
-- [ ] Credit protocol (credit line creation, transfers)
-- [ ] Governance protocol (proposals, votes, results)
-- [ ] Resource protocol (metrics aggregation)
+## Hooks Integration
 
-### 7.2 WebSocket Bridge Extensions
-- [ ] Handle vouch messages (send/receive)
-- [ ] Handle credit messages (lines, transfers)
-- [ ] Handle governance messages (proposals, votes)
-- [ ] Handle resource updates (metrics)
+### Pre-Operation
+- Auto-assign agents by file type
+- Validate commands for safety
+- Prepare resources automatically
+- Optimize topology by complexity
+- Cache searches
 
-### 7.3 State Persistence
-- [ ] Vouch storage in SQLite
-- [ ] Credit line storage with balances
-- [ ] Proposal storage with vote counts
-- [ ] Resource metrics aggregation
+### Post-Operation
+- Auto-format code
+- Train neural patterns
+- Update memory
+- Analyze performance
+- Track token usage
 
-### 7.4 Integration Testing
-- [ ] Multi-node vouch propagation tests
-- [ ] Credit transfer flow tests
-- [ ] Governance quorum tests
-- [ ] E2E dashboard tests (Playwright)
+### Session Management
+- Generate summaries
+- Persist state
+- Track metrics
+- Restore context
+- Export workflows
 
-## Testing
+## Advanced Features (v2.0.0)
 
-```bash
-# Run dashboard tests
-cd dashboard && pnpm test
+- 🚀 Automatic Topology Selection
+- ⚡ Parallel Execution (2.8-4.4x speed)
+- 🧠 Neural Training
+- 📊 Bottleneck Analysis
+- 🤖 Smart Auto-Spawning
+- 🛡️ Self-Healing Workflows
+- 💾 Cross-Session Memory
+- 🔗 GitHub Integration
 
-# Type check
-cd dashboard && npx tsc --noEmit
+## Integration Tips
 
-# Build verification
-cd dashboard && pnpm build
+1. Start with basic swarm init
+2. Scale agents gradually
+3. Use memory for context
+4. Monitor progress regularly
+5. Train patterns from success
+6. Enable hooks automation
+7. Use GitHub tools first
 
-# Run Rust tests (if backend is present)
-cargo test --workspace
+## Support
 
-# Run with logging
-RUST_LOG=debug cargo test --workspace -- --nocapture
-```
-
-**Dashboard Build**: 1071 modules, 1.90s build time
-
-## Design System
-
-The dashboard uses the Univrs.io "Organic Bioluminescence" design system:
-
-### Color Palette (CSS Variables)
-```css
---void: #0a0a0f           /* Deep space background */
---deep-earth: #12121a     /* Card backgrounds */
---forest-floor: #1a1a24   /* Elevated surfaces */
---moss: #252532           /* Interactive elements */
---bark: #3a3a4a           /* Borders, dividers */
---soft-gray: #8b8b9b      /* Secondary text */
---mycelium-white: #e8e8ec /* Primary text */
---glow-cyan: #00d4aa      /* Primary accent */
---glow-gold: #ffd700      /* Secondary accent */
---spore-purple: #9b59b6   /* Tertiary accent */
-```
-
-### Typography
-- Display: Space Grotesk (headings, stats)
-- Body: Inter (paragraphs, UI text)
-- Mono: JetBrains Mono (code, peer IDs)
-
-## Troubleshooting
-
-### Dashboard not connecting
-1. Check WebSocket URL in `dashboard/src/hooks/useP2P.ts`
-2. Ensure node is running with `--http-port 8080`
-3. Check browser console for CORS errors
-
-### Build failures
-1. Run `npx tsc --noEmit` to check for type errors
-2. Check for unused imports/variables
-3. Verify all component props match their interfaces
-
-### Theme not switching
-1. Check CSS variables are defined in `index.css`
-2. Verify `data-theme` attribute on document root
-3. Check localStorage for saved theme preference
+- Documentation: https://github.com/ruvnet/claude-flow
+- Issues: https://github.com/ruvnet/claude-flow/issues
+- Flow-Nexus Platform: https://flow-nexus.ruv.io (registration required for cloud features)
 
 ---
 
-*Last Updated: 2025-12-16 - Phase 6 UI complete, Phase 7 backend integration next*
+Remember: **Claude Flow coordinates, Claude Code creates!**
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+Never save working files, text/mds and tests to the root folder.
