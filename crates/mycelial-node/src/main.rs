@@ -19,8 +19,9 @@ use tracing_subscriber::FmtSubscriber;
 use mycelial_core::peer::{PeerId, PeerInfo};
 use mycelial_core::reputation::Reputation;
 use mycelial_network::{NetworkService, NetworkHandle, NetworkConfig, NetworkEvent, Keypair, Libp2pPeerId};
+use mycelial_network::{is_economics_topic, parse_economics_message, EconomicsEvent};
 use mycelial_state::SqliteStore;
-use server::messages::WsMessage;
+use server::messages::{WsMessage, ContributorEntry};
 
 #[derive(Parser)]
 #[command(name = "mycelial-node")]
@@ -228,10 +229,167 @@ async fn handle_network_event(event: NetworkEvent, state: &AppState, local_peer_
             // Update message count
             state.message_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+            let from_id = source.map(|p| p.to_base58()).unwrap_or_else(|| "unknown".to_string());
+            let ts = timestamp.timestamp_millis();
+
+            // Check if this is an economics protocol message
+            if is_economics_topic(&topic) {
+                if let Some(econ_event) = parse_economics_message(&topic, &data) {
+                    match econ_event {
+                        EconomicsEvent::Vouch(vouch_msg) => {
+                            use mycelial_protocol::VouchMessage;
+                            match vouch_msg {
+                                VouchMessage::VouchRequest(req) => {
+                                    let _ = state.event_tx.send(WsMessage::VouchRequest {
+                                        id: req.id.to_string(),
+                                        voucher: req.voucher,
+                                        vouchee: req.vouchee,
+                                        weight: req.stake,
+                                        timestamp: ts,
+                                    });
+                                }
+                                VouchMessage::VouchAck(ack) => {
+                                    let _ = state.event_tx.send(WsMessage::VouchAck {
+                                        id: message_id.to_string(),
+                                        request_id: ack.vouch_id.to_string(),
+                                        accepted: ack.accepted,
+                                        new_reputation: None,
+                                        timestamp: ts,
+                                    });
+                                }
+                                VouchMessage::ReputationUpdate(update) => {
+                                    let _ = state.event_tx.send(WsMessage::ReputationUpdate {
+                                        peer_id: update.peer_id,
+                                        new_score: update.score,
+                                    });
+                                }
+                            }
+                        }
+                        EconomicsEvent::Credit(credit_msg) => {
+                            use mycelial_protocol::CreditMessage;
+                            match credit_msg {
+                                CreditMessage::CreateLine(line) => {
+                                    let _ = state.event_tx.send(WsMessage::CreditLine {
+                                        id: line.id.to_string(),
+                                        creditor: line.creditor,
+                                        debtor: line.debtor,
+                                        limit: line.limit,
+                                        balance: 0.0,
+                                        timestamp: ts,
+                                    });
+                                }
+                                CreditMessage::Transfer(transfer) => {
+                                    let _ = state.event_tx.send(WsMessage::CreditTransfer {
+                                        id: transfer.id.to_string(),
+                                        from: transfer.from,
+                                        to: transfer.to,
+                                        amount: transfer.amount,
+                                        memo: transfer.memo,
+                                        timestamp: ts,
+                                    });
+                                }
+                                CreditMessage::LineAck(ack) => {
+                                    // LineAck doesn't have creditor/debtor/limit - it's just an ack
+                                    // We can skip or send a minimal message
+                                    info!("Credit line {} {}", ack.line_id, if ack.accepted { "accepted" } else { "rejected" });
+                                }
+                                CreditMessage::TransferAck(_) | CreditMessage::LineUpdate(_) => {
+                                    // Handle additional credit events if needed
+                                }
+                            }
+                        }
+                        EconomicsEvent::Governance(gov_msg) => {
+                            use mycelial_protocol::GovernanceMessage;
+                            match gov_msg {
+                                GovernanceMessage::CreateProposal(proposal) => {
+                                    // quorum is f64 (0.0-1.0), convert to percentage as u32
+                                    let quorum_pct = (proposal.quorum * 100.0) as u32;
+                                    let _ = state.event_tx.send(WsMessage::Proposal {
+                                        id: proposal.id.to_string(),
+                                        proposer: proposal.proposer,
+                                        title: proposal.title,
+                                        description: proposal.description,
+                                        proposal_type: format!("{:?}", proposal.proposal_type),
+                                        status: "active".to_string(),
+                                        yes_votes: 0,
+                                        no_votes: 0,
+                                        quorum: quorum_pct,
+                                        deadline: proposal.deadline.timestamp_millis(),
+                                        timestamp: ts,
+                                    });
+                                }
+                                GovernanceMessage::CastVote(vote) => {
+                                    let _ = state.event_tx.send(WsMessage::VoteCast {
+                                        id: message_id.to_string(),
+                                        proposal_id: vote.proposal_id.to_string(),
+                                        voter: vote.voter,
+                                        vote: format!("{:?}", vote.vote),
+                                        weight: vote.weight,
+                                        timestamp: ts,
+                                    });
+                                }
+                                GovernanceMessage::ProposalUpdate(update) => {
+                                    // votes_for/against are f64 (weighted), convert to u32 counts
+                                    let _ = state.event_tx.send(WsMessage::Proposal {
+                                        id: update.proposal_id.to_string(),
+                                        proposer: "".to_string(),
+                                        title: "".to_string(),
+                                        description: "".to_string(),
+                                        proposal_type: "".to_string(),
+                                        status: format!("{:?}", update.status),
+                                        yes_votes: update.votes_for as u32,
+                                        no_votes: update.votes_against as u32,
+                                        quorum: 0,
+                                        deadline: 0,
+                                        timestamp: ts,
+                                    });
+                                }
+                                GovernanceMessage::ProposalExecuted(_) => {
+                                    // Handle proposal execution if needed
+                                }
+                            }
+                        }
+                        EconomicsEvent::Resource(res_msg) => {
+                            use mycelial_protocol::ResourceMessage;
+                            match res_msg {
+                                ResourceMessage::Contribution(contrib) => {
+                                    let _ = state.event_tx.send(WsMessage::ResourceContribution {
+                                        id: contrib.id.to_string(),
+                                        peer_id: contrib.peer_id,
+                                        resource_type: format!("{:?}", contrib.resource_type),
+                                        amount: contrib.amount,
+                                        unit: contrib.unit,
+                                        timestamp: ts,
+                                    });
+                                }
+                                ResourceMessage::PoolUpdate(pool) => {
+                                    let contributors: Vec<ContributorEntry> = pool.top_contributors
+                                        .iter()
+                                        .map(|c| ContributorEntry {
+                                            peer_id: c.peer_id.clone(),
+                                            contribution: c.contribution_score,
+                                            percentage: 0.0, // Not available in protocol type
+                                        })
+                                        .collect();
+                                    let _ = state.event_tx.send(WsMessage::ResourcePoolUpdate {
+                                        resource_type: "pool".to_string(),
+                                        total_available: pool.total_bandwidth + pool.total_compute,
+                                        total_used: 0.0, // Not tracked in protocol
+                                        contributors,
+                                        timestamp: ts,
+                                    });
+                                }
+                                ResourceMessage::Metrics(_) => {
+                                    // Handle resource metrics if needed
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // Try to parse as chat message (handles chat, content, and direct topics)
-            if topic.contains("chat") || topic.contains("content") || topic.contains("direct") {
+            else if topic.contains("chat") || topic.contains("content") || topic.contains("direct") {
                 if let Ok(content) = String::from_utf8(data.clone()) {
-                    let from_id = source.map(|p| p.to_base58()).unwrap_or_else(|| "unknown".to_string());
                     let short_from = &from_id[..8.min(from_id.len())];
 
                     let _ = state.event_tx.send(WsMessage::ChatMessage {
@@ -240,7 +398,7 @@ async fn handle_network_event(event: NetworkEvent, state: &AppState, local_peer_
                         from_name: format!("Peer-{}", short_from),
                         to: None,
                         content,
-                        timestamp: timestamp.timestamp_millis(),
+                        timestamp: ts,
                     });
                 }
             }

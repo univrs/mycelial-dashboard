@@ -1,4 +1,7 @@
 //! WebSocket connection handling
+//!
+//! This module handles WebSocket connections from dashboard clients,
+//! including support for economics protocol messages.
 
 use axum::{
     extract::{
@@ -14,6 +17,13 @@ use uuid::Uuid;
 
 use crate::AppState;
 use super::messages::{WsMessage, ClientMessage, PeerListEntry};
+use mycelial_protocol::{
+    topics,
+    VouchMessage, VouchRequest, VouchAck as ProtocolVouchAck,
+    CreditMessage, CreateCreditLine as ProtocolCreateCreditLine, CreditTransfer as ProtocolCreditTransfer,
+    GovernanceMessage, CreateProposal as ProtocolCreateProposal, CastVote as ProtocolCastVote, Vote,
+    ResourceMessage, ResourceContribution as ProtocolResourceContribution, ResourceType,
+};
 
 /// Handle WebSocket upgrade
 pub async fn ws_handler(
@@ -168,6 +178,297 @@ async fn handle_client_message(msg: ClientMessage, state: &AppState) {
         ClientMessage::Subscribe { topic } => {
             if let Err(e) = state.network.subscribe(&topic).await {
                 error!("Failed to subscribe to topic {}: {}", topic, e);
+            }
+        }
+
+        // ============ Economics Protocol Handlers ============
+
+        ClientMessage::SendVouch { vouchee, weight, message } => {
+            info!("SendVouch: vouchee='{}', weight={}", vouchee, weight);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            // Create vouch request message (uses stake, not weight)
+            let mut vouch_req = VouchRequest::new(
+                state.local_peer_id.to_string(),
+                vouchee.clone(),
+                weight, // VouchRequest calls this 'stake'
+            );
+            if let Some(msg) = message {
+                vouch_req = vouch_req.with_message(msg);
+            }
+            let request_id = vouch_req.id.to_string();
+            let vouch_msg = VouchMessage::VouchRequest(vouch_req);
+
+            // Serialize and publish to network
+            match serde_json::to_vec(&vouch_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::VOUCH, data).await {
+                        error!("Failed to publish vouch request: {}", e);
+                    } else {
+                        info!("Vouch request published successfully");
+
+                        // Local echo for the sender
+                        let echo_msg = WsMessage::VouchRequest {
+                            id: request_id,
+                            voucher: state.local_peer_id.to_string(),
+                            vouchee,
+                            weight,
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize vouch request: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::RespondVouch { request_id, accept } => {
+            info!("RespondVouch: request_id='{}', accept={}", request_id, accept);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            // Parse request_id as UUID
+            let vouch_id = match Uuid::parse_str(&request_id) {
+                Ok(id) => id,
+                Err(e) => {
+                    error!("Invalid vouch request ID: {}", e);
+                    return;
+                }
+            };
+
+            // Create vouch ack message with correct fields
+            let ack_msg = VouchMessage::VouchAck(ProtocolVouchAck {
+                vouch_id,
+                from: state.local_peer_id.to_string(),
+                accepted: accept,
+                reason: None,
+                timestamp: chrono::Utc::now(),
+            });
+
+            match serde_json::to_vec(&ack_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::VOUCH, data).await {
+                        error!("Failed to publish vouch ack: {}", e);
+                    } else {
+                        let echo_msg = WsMessage::VouchAck {
+                            id: Uuid::new_v4().to_string(),
+                            request_id,
+                            accepted: accept,
+                            new_reputation: None,
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize vouch ack: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::CreateCreditLine { debtor, limit } => {
+            info!("CreateCreditLine: debtor='{}', limit={}", debtor, limit);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            let credit_msg = CreditMessage::CreateLine(ProtocolCreateCreditLine::new(
+                state.local_peer_id.to_string(),
+                debtor.clone(),
+                limit,
+            ));
+
+            match serde_json::to_vec(&credit_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::CREDIT, data).await {
+                        error!("Failed to publish credit line: {}", e);
+                    } else {
+                        let echo_msg = WsMessage::CreditLine {
+                            id: Uuid::new_v4().to_string(),
+                            creditor: state.local_peer_id.to_string(),
+                            debtor,
+                            limit,
+                            balance: 0.0,
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize credit line: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::TransferCredit { to, amount, memo } => {
+            info!("TransferCredit: to='{}', amount={}", to, amount);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            // For transfers, we use a placeholder line_id - in practice, the client should
+            // provide the actual credit line ID they want to use for the transfer
+            let line_id = Uuid::new_v4(); // Placeholder - real impl would look up active credit line
+            let mut transfer = ProtocolCreditTransfer::new(
+                line_id,
+                state.local_peer_id.to_string(),
+                to.clone(),
+                amount,
+            );
+            if let Some(ref m) = memo {
+                transfer = transfer.with_memo(m);
+            }
+            let transfer_msg = CreditMessage::Transfer(transfer);
+
+            match serde_json::to_vec(&transfer_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::CREDIT, data).await {
+                        error!("Failed to publish credit transfer: {}", e);
+                    } else {
+                        let echo_msg = WsMessage::CreditTransfer {
+                            id: Uuid::new_v4().to_string(),
+                            from: state.local_peer_id.to_string(),
+                            to,
+                            amount,
+                            memo,
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize credit transfer: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::CreateProposal { title, description, proposal_type } => {
+            info!("CreateProposal: title='{}'", title);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            let proposal_msg = GovernanceMessage::CreateProposal(ProtocolCreateProposal::new(
+                state.local_peer_id.to_string(),
+                title.clone(),
+                description.clone(),
+            ));
+
+            match serde_json::to_vec(&proposal_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::GOVERNANCE, data).await {
+                        error!("Failed to publish proposal: {}", e);
+                    } else {
+                        let echo_msg = WsMessage::Proposal {
+                            id: Uuid::new_v4().to_string(),
+                            proposer: state.local_peer_id.to_string(),
+                            title,
+                            description,
+                            proposal_type,
+                            status: "active".to_string(),
+                            yes_votes: 0,
+                            no_votes: 0,
+                            quorum: 3,
+                            deadline: timestamp + 86400000, // 24 hours
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize proposal: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::CastVote { proposal_id, vote } => {
+            info!("CastVote: proposal_id='{}', vote='{}'", proposal_id, vote);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            // Parse proposal_id as UUID
+            let prop_uuid = match Uuid::parse_str(&proposal_id) {
+                Ok(id) => id,
+                Err(e) => {
+                    error!("Invalid proposal ID: {}", e);
+                    return;
+                }
+            };
+
+            let vote_enum = match vote.as_str() {
+                "yes" => Vote::For,
+                "no" => Vote::Against,
+                _ => Vote::Abstain,
+            };
+
+            // CastVote::new takes (proposal_id: Uuid, voter, vote, weight)
+            let vote_msg = GovernanceMessage::CastVote(ProtocolCastVote::new(
+                prop_uuid,
+                state.local_peer_id.to_string(),
+                vote_enum,
+                1.0, // Default weight, could be based on reputation
+            ));
+
+            match serde_json::to_vec(&vote_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::GOVERNANCE, data).await {
+                        error!("Failed to publish vote: {}", e);
+                    } else {
+                        let echo_msg = WsMessage::VoteCast {
+                            id: Uuid::new_v4().to_string(),
+                            proposal_id,
+                            voter: state.local_peer_id.to_string(),
+                            vote,
+                            weight: 1.0,
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize vote: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::ReportResource { resource_type, amount, unit } => {
+            info!("ReportResource: type='{}', amount={}", resource_type, amount);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+
+            let res_type = match resource_type.as_str() {
+                "bandwidth" => ResourceType::Bandwidth,
+                "storage" => ResourceType::Storage,
+                "compute" => ResourceType::Compute,
+                _ => ResourceType::Other(resource_type.clone()),
+            };
+
+            let resource_msg = ResourceMessage::Contribution(ProtocolResourceContribution::new(
+                state.local_peer_id.to_string(),
+                res_type,
+                amount,
+                unit.clone(),
+            ));
+
+            match serde_json::to_vec(&resource_msg) {
+                Ok(data) => {
+                    if let Err(e) = state.network.publish(topics::RESOURCE, data).await {
+                        error!("Failed to publish resource contribution: {}", e);
+                    } else {
+                        let echo_msg = WsMessage::ResourceContribution {
+                            id: Uuid::new_v4().to_string(),
+                            peer_id: state.local_peer_id.to_string(),
+                            resource_type,
+                            amount,
+                            unit,
+                            timestamp,
+                        };
+                        let _ = state.event_tx.send(echo_msg);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to serialize resource contribution: {}", e);
+                }
             }
         }
     }
