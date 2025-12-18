@@ -1,473 +1,352 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import type { Workload, NodeHealth, ClusterMetrics, OrchestratorEvent } from '../types';
+// src/hooks/useOrchestrator.ts
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { Workload, NodeHealth, ClusterMetrics } from '@/types';
 
 interface UseOrchestratorOptions {
-  wsUrl?: string;
   apiUrl?: string;
-  reconnectInterval?: number;
-  maxReconnectAttempts?: number;
+  wsUrl?: string;
   autoConnect?: boolean;
+  pollInterval?: number;
 }
 
-interface OrchestratorState {
-  connected: boolean;
-  loading: boolean;
-  error: string | null;
-  workloads: Map<string, Workload>;
-  nodes: Map<string, NodeHealth>;
-  clusterMetrics: ClusterMetrics | null;
-}
-
-// Environment configuration - configurable via env vars or options
-const ENV_WS_URL = import.meta.env.VITE_ORCHESTRATOR_WS_URL || import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+// Environment configuration
+const ENV_WS_URL = import.meta.env.VITE_ORCHESTRATOR_WS_URL || import.meta.env.VITE_WS_URL || 'ws://localhost:9090/api/v1/events';
 const ENV_API_URL = import.meta.env.VITE_ORCHESTRATOR_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 export function useOrchestrator(options: UseOrchestratorOptions = {}) {
-  const {
-    wsUrl = ENV_WS_URL,
-    apiUrl = ENV_API_URL,
-    reconnectInterval = 3000,
-    maxReconnectAttempts = 5,
-    autoConnect = true,
-  } = options;
+  const apiUrl = options.apiUrl ?? ENV_API_URL;
+  const wsUrl = options.wsUrl ?? ENV_WS_URL;
+  const autoConnect = options.autoConnect ?? true;
+  const pollInterval = options.pollInterval ?? 5000;
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<number>();
-  const reconnectAttemptsRef = useRef(0);
-  const isConnectingRef = useRef(false);
+  // Store options in refs to avoid dependency cycles
+  const apiUrlRef = useRef(apiUrl);
+  const wsUrlRef = useRef(wsUrl);
+  const pollIntervalRef = useRef(pollInterval);
+  const isMountedRef = useRef(true);
 
-  const [state, setState] = useState<OrchestratorState>({
-    connected: false,
-    loading: false,
-    error: null,
-    workloads: new Map(),
-    nodes: new Map(),
-    clusterMetrics: null,
-  });
+  // Update refs when options change
+  apiUrlRef.current = apiUrl;
+  wsUrlRef.current = wsUrl;
+  pollIntervalRef.current = pollInterval;
 
-  // Handle incoming WebSocket messages for real-time updates
-  const handleMessage = useCallback((event: OrchestratorEvent) => {
-    console.log('Orchestrator event:', event);
+  // State
+  const [workloads, setWorkloads] = useState<Map<string, Workload>>(new Map());
+  const [nodes, setNodes] = useState<Map<string, NodeHealth>>(new Map());
+  const [clusterMetrics, setClusterMetrics] = useState<ClusterMetrics | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    switch (event.type) {
-      case 'workload_list': {
-        const workloads = (event.data as Workload[]) || [];
-        setState(s => {
-          const newWorkloads = new Map(s.workloads);
-          for (const workload of workloads) {
-            newWorkloads.set(workload.id, workload);
-          }
-          return { ...s, workloads: newWorkloads };
-        });
-        break;
-      }
+  // Refs for polling
+  const pollTimerRef = useRef<number | undefined>(undefined);
 
-      case 'workload_created':
-      case 'workload_updated': {
-        const workload = event.data as Workload;
-        setState(s => {
-          const newWorkloads = new Map(s.workloads);
-          newWorkloads.set(workload.id, workload);
-          return { ...s, workloads: newWorkloads };
-        });
-        break;
-      }
+  // Generate mock data for development/fallback
+  const generateMockData = useCallback(() => {
+    const mockNodes = new Map<string, NodeHealth>();
+    const mockWorkloads = new Map<string, Workload>();
 
-      case 'workload_completed':
-      case 'workload_failed': {
-        const workload = event.data as Workload;
-        setState(s => {
-          const newWorkloads = new Map(s.workloads);
-          newWorkloads.set(workload.id, workload);
-          return { ...s, workloads: newWorkloads };
-        });
-        break;
-      }
+    // Create mock nodes
+    const nodeStatuses: NodeHealth['status'][] = ['healthy', 'healthy', 'healthy', 'degraded', 'healthy'];
+    const regions = ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-south-1', 'us-east-2'];
 
-      case 'node_list': {
-        const nodes = (event.data as NodeHealth[]) || [];
-        setState(s => {
-          const newNodes = new Map(s.nodes);
-          for (const node of nodes) {
-            newNodes.set(node.nodeId, node);
-          }
-          return { ...s, nodes: newNodes };
-        });
-        break;
-      }
-
-      case 'node_status':
-      case 'node_joined': {
-        const node = event.data as NodeHealth;
-        setState(s => {
-          const newNodes = new Map(s.nodes);
-          newNodes.set(node.nodeId, node);
-          return { ...s, nodes: newNodes };
-        });
-        break;
-      }
-
-      case 'node_left': {
-        const nodeId = (event.data as { nodeId: string }).nodeId;
-        setState(s => {
-          const newNodes = new Map(s.nodes);
-          newNodes.delete(nodeId);
-          return { ...s, nodes: newNodes };
-        });
-        break;
-      }
-
-      case 'cluster_metrics': {
-        const metrics = event.data as ClusterMetrics;
-        setState(s => ({ ...s, clusterMetrics: metrics }));
-        break;
-      }
+    for (let i = 0; i < 5; i++) {
+      const nodeId = `node-${i + 1}-${Math.random().toString(36).slice(2, 10)}`;
+      mockNodes.set(nodeId, {
+        nodeId,
+        nodeName: `worker-node-${i + 1}`,
+        status: nodeStatuses[i],
+        lastHeartbeat: Date.now() - Math.random() * 60000,
+        uptime: Math.floor(Math.random() * 86400 * 7),
+        cpu: {
+          usage: 20 + Math.random() * 60,
+          cores: 8,
+          temperature: 45 + Math.random() * 20,
+        },
+        memory: {
+          used: Math.floor(8 * 1024 * 1024 * 1024 * (0.3 + Math.random() * 0.5)),
+          total: 16 * 1024 * 1024 * 1024,
+          available: Math.floor(16 * 1024 * 1024 * 1024 * (0.2 + Math.random() * 0.3)),
+        },
+        disk: {
+          used: Math.floor(200 * 1024 * 1024 * 1024 * (0.4 + Math.random() * 0.4)),
+          total: 500 * 1024 * 1024 * 1024,
+          readRate: Math.floor(Math.random() * 100 * 1024 * 1024),
+          writeRate: Math.floor(Math.random() * 50 * 1024 * 1024),
+        },
+        network: {
+          bytesIn: Math.floor(Math.random() * 10 * 1024 * 1024 * 1024),
+          bytesOut: Math.floor(Math.random() * 5 * 1024 * 1024 * 1024),
+          connections: Math.floor(Math.random() * 100),
+          latency: Math.floor(5 + Math.random() * 50),
+        },
+        workloads: {
+          running: Math.floor(Math.random() * 5),
+          queued: Math.floor(Math.random() * 3),
+          completed: Math.floor(Math.random() * 100),
+          failed: Math.floor(Math.random() * 5),
+        },
+        version: '1.2.3',
+        region: regions[i],
+      });
     }
+
+    // Create mock workloads
+    const workloadNames = ['data-processing', 'model-training', 'batch-inference', 'etl-pipeline', 'backup-sync'];
+    const statuses: Workload['status'][] = ['running', 'running', 'pending', 'completed', 'failed'];
+    const priorities: Workload['priority'][] = ['high', 'critical', 'medium', 'low', 'medium'];
+
+    for (let i = 0; i < 5; i++) {
+      const workloadId = `wl-${i + 1}-${Math.random().toString(36).slice(2, 10)}`;
+      mockWorkloads.set(workloadId, {
+        id: workloadId,
+        name: `${workloadNames[i]}-${Math.random().toString(36).slice(2, 6)}`,
+        description: `${workloadNames[i].replace('-', ' ')} task`,
+        status: statuses[i],
+        priority: priorities[i],
+        assignedNode: Array.from(mockNodes.keys())[i % mockNodes.size],
+        createdAt: Date.now() - Math.random() * 3600000,
+        startedAt: statuses[i] !== 'pending' ? Date.now() - Math.random() * 1800000 : undefined,
+        completedAt: statuses[i] === 'completed' || statuses[i] === 'failed' ? Date.now() - Math.random() * 600000 : undefined,
+        progress: statuses[i] === 'completed' ? 100 : statuses[i] === 'failed' ? Math.floor(Math.random() * 50) : Math.floor(Math.random() * 80),
+        resourceRequirements: {
+          cpu: 1 + Math.floor(Math.random() * 4),
+          memory: (1 + Math.floor(Math.random() * 8)) * 1024 * 1024 * 1024,
+          storage: (10 + Math.floor(Math.random() * 100)) * 1024 * 1024 * 1024,
+        },
+      });
+    }
+
+    // Create mock cluster metrics
+    const nodesList = Array.from(mockNodes.values());
+    const workloadsList = Array.from(mockWorkloads.values());
+
+    const mockMetrics: ClusterMetrics = {
+      clusterId: 'cluster-primary',
+      clusterName: 'Mycelial Primary Cluster',
+      totalNodes: nodesList.length,
+      healthyNodes: nodesList.filter(n => n.status === 'healthy').length,
+      degradedNodes: nodesList.filter(n => n.status === 'degraded').length,
+      offlineNodes: nodesList.filter(n => n.status === 'offline').length,
+      totalWorkloads: workloadsList.length,
+      runningWorkloads: workloadsList.filter(w => w.status === 'running').length,
+      pendingWorkloads: workloadsList.filter(w => w.status === 'pending').length,
+      completedWorkloads: workloadsList.filter(w => w.status === 'completed').length,
+      failedWorkloads: workloadsList.filter(w => w.status === 'failed').length,
+      resources: {
+        totalCpu: nodesList.reduce((acc, n) => acc + n.cpu.cores, 0),
+        usedCpu: nodesList.reduce((acc, n) => acc + (n.cpu.cores * n.cpu.usage / 100), 0),
+        totalMemory: nodesList.reduce((acc, n) => acc + n.memory.total, 0),
+        usedMemory: nodesList.reduce((acc, n) => acc + n.memory.used, 0),
+        totalStorage: nodesList.reduce((acc, n) => acc + n.disk.total, 0),
+        usedStorage: nodesList.reduce((acc, n) => acc + n.disk.used, 0),
+      },
+      throughput: {
+        workloadsPerHour: 45,
+        avgCompletionTime: 127000,
+        successRate: 94.5,
+      },
+      lastUpdated: Date.now(),
+    };
+
+    return { mockNodes, mockWorkloads, mockMetrics };
   }, []);
 
-  // Fetch workloads from REST API
-  const fetchWorkloads = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiUrl}/orchestrator/workloads`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch workloads: ${response.status}`);
-      }
-      const data = await response.json();
-      const workloads = new Map<string, Workload>();
-      const workloadList = Array.isArray(data) ? data : data.workloads || [];
-      for (const w of workloadList) {
-        workloads.set(w.id, w);
-      }
-      setState(s => ({ ...s, workloads, error: null }));
-      return workloads;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to fetch workloads';
-      console.error('Failed to fetch workloads:', errorMsg);
-      setState(s => ({ ...s, error: errorMsg }));
-      throw err;
-    }
-  }, [apiUrl]);
+  // Fetch data from API
+  const fetchData = useCallback(async () => {
+    if (!isMountedRef.current) return;
 
-  // Fetch nodes from REST API
-  const fetchNodes = useCallback(async () => {
     try {
-      const response = await fetch(`${apiUrl}/orchestrator/nodes`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch nodes: ${response.status}`);
-      }
-      const data = await response.json();
-      const nodes = new Map<string, NodeHealth>();
-      const nodeList = Array.isArray(data) ? data : data.nodes || [];
-      for (const n of nodeList) {
-        nodes.set(n.nodeId, n);
-      }
-      setState(s => ({ ...s, nodes, error: null }));
-      return nodes;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to fetch nodes';
-      console.error('Failed to fetch nodes:', errorMsg);
-      setState(s => ({ ...s, error: errorMsg }));
-      throw err;
-    }
-  }, [apiUrl]);
+      setLoading(true);
 
-  // Fetch cluster metrics from REST API
-  const fetchClusterMetrics = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiUrl}/orchestrator/metrics`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch cluster metrics: ${response.status}`);
-      }
-      const data = await response.json();
-      const clusterMetrics = data.cluster || data;
-      setState(s => ({ ...s, clusterMetrics, error: null }));
-      return clusterMetrics;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to fetch cluster metrics';
-      console.error('Failed to fetch cluster metrics:', errorMsg);
-      setState(s => ({ ...s, error: errorMsg }));
-      throw err;
-    }
-  }, [apiUrl]);
-
-  // Fetch all orchestrator data
-  const fetchOrchestratorData = useCallback(async () => {
-    setState(s => ({ ...s, loading: true, error: null }));
-    try {
-      await Promise.all([
-        fetchWorkloads(),
-        fetchNodes(),
-        fetchClusterMetrics(),
+      // Try to fetch from real API
+      const [nodesRes, workloadsRes, statusRes] = await Promise.allSettled([
+        fetch(`${apiUrlRef.current}/v1/nodes`),
+        fetch(`${apiUrlRef.current}/v1/workloads`),
+        fetch(`${apiUrlRef.current}/v1/cluster/status`),
       ]);
-      setState(s => ({ ...s, loading: false }));
+
+      if (!isMountedRef.current) return;
+
+      let hasRealData = false;
+
+      // Process nodes
+      if (nodesRes.status === 'fulfilled' && nodesRes.value.ok) {
+        const data = await nodesRes.value.json();
+        const nodesArray = data.nodes || data || [];
+        const nodesMap = new Map<string, NodeHealth>();
+        for (const node of nodesArray) {
+          nodesMap.set(node.nodeId || node.id, node);
+        }
+        setNodes(nodesMap);
+        hasRealData = true;
+      }
+
+      // Process workloads
+      if (workloadsRes.status === 'fulfilled' && workloadsRes.value.ok) {
+        const data = await workloadsRes.value.json();
+        const workloadsArray = data.workloads || data || [];
+        const workloadsMap = new Map<string, Workload>();
+        for (const workload of workloadsArray) {
+          workloadsMap.set(workload.id, workload);
+        }
+        setWorkloads(workloadsMap);
+        hasRealData = true;
+      }
+
+      // Process cluster status
+      if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
+        const data = await statusRes.value.json();
+        setClusterMetrics(data);
+        hasRealData = true;
+      }
+
+      if (hasRealData) {
+        setConnected(true);
+        setError(null);
+      } else {
+        // Fall back to mock data
+        const { mockNodes, mockWorkloads, mockMetrics } = generateMockData();
+        setNodes(mockNodes);
+        setWorkloads(mockWorkloads);
+        setClusterMetrics(mockMetrics);
+        setConnected(false);
+        setError('Using mock data - API unavailable');
+      }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to fetch orchestrator data';
-      setState(s => ({ ...s, loading: false, error: errorMsg }));
+      if (!isMountedRef.current) return;
+
+      console.error('Failed to fetch orchestrator data:', err);
+
+      // Fall back to mock data
+      const { mockNodes, mockWorkloads, mockMetrics } = generateMockData();
+      setNodes(mockNodes);
+      setWorkloads(mockWorkloads);
+      setClusterMetrics(mockMetrics);
+      setConnected(false);
+      setError(err instanceof Error ? err.message : 'Connection failed');
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [fetchWorkloads, fetchNodes, fetchClusterMetrics]);
+  }, [generateMockData]);
 
-  // Connect to WebSocket for real-time updates
-  const connect = useCallback(() => {
-    // Prevent multiple simultaneous connection attempts
-    if (isConnectingRef.current) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
-
-    // Check if we've exceeded max reconnect attempts
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      console.warn(`Orchestrator: Max reconnect attempts (${maxReconnectAttempts}) reached. Stopping reconnection.`);
-      setState(s => ({
-        ...s,
-        connected: false,
-        loading: false,
-        error: `Connection failed after ${maxReconnectAttempts} attempts. Server may be unavailable.`,
-      }));
-      return;
+  // Start polling
+  const startPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
     }
+    pollTimerRef.current = window.setInterval(() => {
+      if (isMountedRef.current) {
+        fetchData();
+      }
+    }, pollIntervalRef.current);
+  }, [fetchData]);
 
-    isConnectingRef.current = true;
-    console.log(`Connecting to orchestrator WebSocket: ${wsUrl} (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
-    setState(s => ({ ...s, loading: true, error: null }));
+  // Stop polling
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = undefined;
+    }
+  }, []);
 
+  // Cancel a workload
+  const cancelWorkload = useCallback(async (workloadId: string) => {
     try {
-      const ws = new WebSocket(wsUrl);
-
-      ws.onopen = () => {
-        console.log('Orchestrator WebSocket connected!');
-        isConnectingRef.current = false;
-        reconnectAttemptsRef.current = 0; // Reset on successful connection
-        setState(s => ({ ...s, connected: true, loading: false, error: null }));
-
-        // Fetch initial data via REST API
-        fetchOrchestratorData();
-
-        // Subscribe to orchestrator events for real-time updates
-        ws.send(JSON.stringify({ type: 'subscribe', topic: 'orchestrator' }));
-        ws.send(JSON.stringify({ type: 'subscribe', topic: 'workloads' }));
-        ws.send(JSON.stringify({ type: 'subscribe', topic: 'nodes' }));
-        ws.send(JSON.stringify({ type: 'subscribe', topic: 'cluster' }));
-      };
-
-      ws.onclose = (event) => {
-        console.log('Orchestrator WebSocket disconnected:', event.code, event.reason);
-        isConnectingRef.current = false;
-        wsRef.current = null;
-        setState(s => ({ ...s, connected: false }));
-
-        // Auto-reconnect with exponential backoff if not a clean close
-        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
-          reconnectAttemptsRef.current++;
-          // Exponential backoff: 3s, 6s, 12s, 24s, 48s...
-          const backoffDelay = reconnectInterval * Math.pow(2, reconnectAttemptsRef.current - 1);
-          console.log(`Orchestrator: Reconnecting in ${backoffDelay / 1000}s...`);
-          reconnectTimerRef.current = window.setTimeout(connect, backoffDelay);
-        }
-      };
-
-      ws.onerror = () => {
-        // Don't log the full error object as it's not useful
-        console.warn('Orchestrator WebSocket connection error');
-        isConnectingRef.current = false;
-        setState(s => ({
-          ...s,
-          connected: false,
-          loading: false,
-          error: 'WebSocket connection failed',
-        }));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          // Handle orchestrator events for real-time updates
-          if (
-            message.type?.startsWith('workload_') ||
-            message.type?.startsWith('node_') ||
-            message.type === 'cluster_metrics' ||
-            message.type === 'workload_list' ||
-            message.type === 'node_list'
-          ) {
-            handleMessage(message as OrchestratorEvent);
+      const response = await fetch(`${apiUrlRef.current}/v1/workloads/${workloadId}/cancel`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        setWorkloads(prev => {
+          const newMap = new Map(prev);
+          const workload = newMap.get(workloadId);
+          if (workload) {
+            newMap.set(workloadId, { ...workload, status: 'cancelled' });
           }
-        } catch (e) {
-          console.error('Failed to parse orchestrator message:', e);
-        }
-      };
-
-      wsRef.current = ws;
+          return newMap;
+        });
+      }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to connect to WebSocket';
-      console.error('WebSocket connection error:', errorMsg);
-      isConnectingRef.current = false;
-      setState(s => ({ ...s, loading: false, error: errorMsg }));
-    }
-  }, [wsUrl, reconnectInterval, maxReconnectAttempts, handleMessage, fetchOrchestratorData]);
-
-  const disconnect = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = undefined;
-    }
-    reconnectAttemptsRef.current = 0;
-    isConnectingRef.current = false;
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'Client disconnect');
-      wsRef.current = null;
+      // Optimistic update for mock mode
+      setWorkloads(prev => {
+        const newMap = new Map(prev);
+        const workload = newMap.get(workloadId);
+        if (workload) {
+          newMap.set(workloadId, { ...workload, status: 'cancelled' });
+        }
+        return newMap;
+      });
     }
   }, []);
 
-  // Reset connection state and retry connecting
-  const resetConnection = useCallback(() => {
-    disconnect();
-    // Small delay before reconnecting
-    setTimeout(() => connect(), 100);
-  }, [disconnect, connect]);
-
-  // Send workload command via WebSocket (for real-time actions)
-  const sendWorkloadCommand = useCallback((command: string, workloadId: string, data?: unknown) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: `workload_${command}`,
-          workloadId,
-          data,
-        })
-      );
+  // Retry a failed workload
+  const retryWorkload = useCallback(async (workloadId: string) => {
+    try {
+      const response = await fetch(`${apiUrlRef.current}/v1/workloads/${workloadId}/retry`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        setWorkloads(prev => {
+          const newMap = new Map(prev);
+          const workload = newMap.get(workloadId);
+          if (workload) {
+            newMap.set(workloadId, { ...workload, status: 'pending', progress: 0 });
+          }
+          return newMap;
+        });
+      }
+    } catch (err) {
+      // Optimistic update for mock mode
+      setWorkloads(prev => {
+        const newMap = new Map(prev);
+        const workload = newMap.get(workloadId);
+        if (workload) {
+          newMap.set(workloadId, { ...workload, status: 'pending', progress: 0 });
+        }
+        return newMap;
+      });
     }
   }, []);
 
-  // Create a new workload via REST API
-  const createWorkload = useCallback(
-    async (workload: Omit<Workload, 'id' | 'createdAt' | 'progress'>) => {
-      try {
-        const response = await fetch(`${apiUrl}/orchestrator/workloads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(workload),
-        });
+  // Refresh data manually
+  const refreshData = useCallback(() => {
+    return fetchData();
+  }, [fetchData]);
 
-        if (!response.ok) {
-          throw new Error(`Failed to create workload: ${response.status}`);
-        }
-
-        const newWorkload = await response.json();
-
-        // Update local state with server response
-        setState(s => {
-          const newWorkloads = new Map(s.workloads);
-          newWorkloads.set(newWorkload.id, newWorkload);
-          return { ...s, workloads: newWorkloads };
-        });
-
-        return newWorkload;
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Failed to create workload';
-        console.error('Create workload error:', errorMsg);
-        setState(s => ({ ...s, error: errorMsg }));
-        throw err;
-      }
-    },
-    [apiUrl]
-  );
-
-  // Cancel a workload via REST API
-  const cancelWorkload = useCallback(
-    async (workloadId: string) => {
-      try {
-        const response = await fetch(`${apiUrl}/orchestrator/workloads/${workloadId}/cancel`, {
-          method: 'POST',
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to cancel workload: ${response.status}`);
-        }
-
-        // Optimistically update local state
-        setState(s => {
-          const newWorkloads = new Map(s.workloads);
-          const workload = newWorkloads.get(workloadId);
-          if (workload) {
-            newWorkloads.set(workloadId, { ...workload, status: 'cancelled' });
-          }
-          return { ...s, workloads: newWorkloads };
-        });
-
-        // Also notify via WebSocket for real-time sync
-        sendWorkloadCommand('cancel', workloadId);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Failed to cancel workload';
-        console.error('Cancel workload error:', errorMsg);
-        setState(s => ({ ...s, error: errorMsg }));
-        throw err;
-      }
-    },
-    [apiUrl, sendWorkloadCommand]
-  );
-
-  // Retry a failed workload via REST API
-  const retryWorkload = useCallback(
-    async (workloadId: string) => {
-      try {
-        const response = await fetch(`${apiUrl}/orchestrator/workloads/${workloadId}/retry`, {
-          method: 'POST',
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to retry workload: ${response.status}`);
-        }
-
-        // Optimistically update local state
-        setState(s => {
-          const newWorkloads = new Map(s.workloads);
-          const workload = newWorkloads.get(workloadId);
-          if (workload) {
-            newWorkloads.set(workloadId, { ...workload, status: 'pending', progress: 0 });
-          }
-          return { ...s, workloads: newWorkloads };
-        });
-
-        // Also notify via WebSocket for real-time sync
-        sendWorkloadCommand('retry', workloadId);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Failed to retry workload';
-        console.error('Retry workload error:', errorMsg);
-        setState(s => ({ ...s, error: errorMsg }));
-        throw err;
-      }
-    },
-    [apiUrl, sendWorkloadCommand]
-  );
-
-  // Clear error state
+  // Clear error
   const clearError = useCallback(() => {
-    setState(s => ({ ...s, error: null }));
+    setError(null);
   }, []);
 
-  // Auto-connect on mount if autoConnect is enabled
+  // Initialize on mount
   useEffect(() => {
+    isMountedRef.current = true;
+
     if (autoConnect) {
-      connect();
+      fetchData();
+      startPolling();
     }
-    return () => disconnect();
-  }, [autoConnect, connect, disconnect]);
+
+    return () => {
+      isMountedRef.current = false;
+      stopPolling();
+    };
+  }, []); // Empty deps - only run on mount/unmount
 
   return {
-    // State
-    ...state,
-    // Connection methods
-    connect,
-    disconnect,
-    resetConnection,
-    // Workload operations
-    createWorkload,
+    workloads,
+    nodes,
+    clusterMetrics,
+    connected,
+    loading,
+    error,
     cancelWorkload,
     retryWorkload,
-    // Data fetching
-    refreshData: fetchOrchestratorData,
-    fetchWorkloads,
-    fetchNodes,
-    fetchClusterMetrics,
-    // Utilities
+    refreshData,
     clearError,
   };
 }
+
+export default useOrchestrator;

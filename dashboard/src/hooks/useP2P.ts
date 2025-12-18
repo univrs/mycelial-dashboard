@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import type { ChatMessage, GraphNode, GraphLink, NormalizedPeer } from '../types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { ChatMessage, GraphNode, GraphLink, NormalizedPeer, Location } from '@/types';
 
 interface UseP2POptions {
   url?: string;
@@ -15,35 +15,54 @@ interface P2PState {
   messages: ChatMessage[];
 }
 
+// Environment configuration - use same default as orchestrator
+const ENV_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:9090/api/v1/events';
+const ENV_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
 // Normalize peer data from different backend formats
-function normalizePeer(peer: any): NormalizedPeer {
-  const id = peer.id || peer.peer_id || '';
-  const name = peer.name || peer.display_name || `Peer-${id.slice(0, 12)}`;
-  const reputation = typeof peer.reputation === 'number' 
-    ? peer.reputation 
-    : (peer.reputation?.score ?? 0.5);
-  
+function normalizePeer(peer: unknown): NormalizedPeer {
+  const p = peer as Record<string, unknown>;
+  const id = (p.id || p.peer_id || '') as string;
+  const name = (p.name || p.display_name || `Peer-${id.slice(0, 12)}`) as string;
+  const repValue = p.reputation;
+  const reputation = typeof repValue === 'number'
+    ? repValue
+    : ((repValue as Record<string, unknown>)?.score as number ?? 0.5);
+
   return {
     id,
     name,
     reputation,
-    location: peer.location,
-    addresses: peer.addresses || [],
+    location: p.location as Location | undefined,
+    addresses: (p.addresses || []) as string[],
   };
 }
 
 export function useP2P(options: UseP2POptions = {}) {
-  const {
-    url = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws',
-    apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080',
-    reconnectInterval = 3000,
-    maxReconnectAttempts = 5,
-  } = options;
+  // Extract options with defaults
+  const wsUrl = options.url ?? ENV_WS_URL;
+  const apiUrl = options.apiUrl ?? ENV_API_URL;
+  const reconnectInterval = options.reconnectInterval ?? 3000;
+  const maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
 
+  // Refs for WebSocket management
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<number>();
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const isConnectingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  // Store options in refs to avoid dependency cycles
+  const wsUrlRef = useRef(wsUrl);
+  const apiUrlRef = useRef(apiUrl);
+  const reconnectIntervalRef = useRef(reconnectInterval);
+  const maxReconnectAttemptsRef = useRef(maxReconnectAttempts);
+
+  // Update refs when options change
+  wsUrlRef.current = wsUrl;
+  apiUrlRef.current = apiUrl;
+  reconnectIntervalRef.current = reconnectInterval;
+  maxReconnectAttemptsRef.current = maxReconnectAttempts;
 
   const [state, setState] = useState<P2PState>({
     connected: false,
@@ -54,12 +73,18 @@ export function useP2P(options: UseP2POptions = {}) {
 
   // Fetch peers via REST API (more reliable than WebSocket for initial load)
   const fetchPeers = useCallback(async () => {
+    if (!isMountedRef.current) return;
     try {
-      console.log('Fetching peers from:', `${apiUrl}/api/peers`);
-      const response = await fetch(`${apiUrl}/api/peers`);
+      const url = `${apiUrlRef.current}/api/peers`;
+      console.log('Fetching peers from:', url);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const peers = await response.json();
       console.log('REST API returned', peers.length, 'peers');
-      
+
+      if (!isMountedRef.current) return;
       setState(s => {
         const newPeers = new Map<string, NormalizedPeer>();
         for (const peer of peers) {
@@ -74,26 +99,33 @@ export function useP2P(options: UseP2POptions = {}) {
     } catch (e) {
       console.error('Failed to fetch peers:', e);
     }
-  }, [apiUrl]);
+  }, []);
 
   // Fetch local peer info
   const fetchInfo = useCallback(async () => {
+    if (!isMountedRef.current) return;
     try {
-      const response = await fetch(`${apiUrl}/api/info`);
+      const response = await fetch(`${apiUrlRef.current}/api/info`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const info = await response.json();
       console.log('Local node info:', info);
+      if (!isMountedRef.current) return;
       setState(s => ({ ...s, localPeerId: info.peer_id }));
     } catch (e) {
       console.error('Failed to fetch info:', e);
     }
-  }, [apiUrl]);
+  }, []);
 
-  const handleMessage = useCallback((message: any) => {
+  // Handle incoming WebSocket messages
+  const handleMessage = useCallback((message: Record<string, unknown>) => {
+    if (!isMountedRef.current) return;
     console.log('WS Message:', message);
-    
+
     switch (message.type) {
       case 'peers_list': {
-        const peers = message.peers || message.data?.peers || [];
+        const peers = (message.peers || (message.data as Record<string, unknown>)?.peers || []) as unknown[];
         setState(s => {
           const newPeers = new Map(s.peers);
           for (const peer of peers) {
@@ -108,12 +140,12 @@ export function useP2P(options: UseP2POptions = {}) {
       }
 
       case 'peer_joined': {
-        const peerId = message.peer_id || message.data?.peer_id;
-        const peerInfo = message.peer_info || message.data?.peer_info || message;
+        const peerId = (message.peer_id || (message.data as Record<string, unknown>)?.peer_id) as string | undefined;
+        const peerInfo = message.peer_info || (message.data as Record<string, unknown>)?.peer_info || message;
         if (peerId) {
           setState(s => {
             const newPeers = new Map(s.peers);
-            const normalized = normalizePeer({ ...peerInfo, id: peerId });
+            const normalized = normalizePeer({ ...peerInfo as object, id: peerId });
             newPeers.set(peerId, normalized);
             return { ...s, peers: newPeers };
           });
@@ -122,7 +154,7 @@ export function useP2P(options: UseP2POptions = {}) {
       }
 
       case 'peer_left': {
-        const peerId = message.peer_id || message.data?.peer_id;
+        const peerId = (message.peer_id || (message.data as Record<string, unknown>)?.peer_id) as string | undefined;
         if (peerId) {
           setState(s => {
             const newPeers = new Map(s.peers);
@@ -136,7 +168,7 @@ export function useP2P(options: UseP2POptions = {}) {
       case 'chat_message':
         setState(s => ({
           ...s,
-          messages: [...s.messages.slice(-99), message.data || message],
+          messages: [...s.messages.slice(-99), (message.data || message) as ChatMessage],
         }));
         break;
 
@@ -145,25 +177,32 @@ export function useP2P(options: UseP2POptions = {}) {
     }
   }, []);
 
+  // Connect to WebSocket
   const connect = useCallback(() => {
     // Prevent multiple simultaneous connection attempts
     if (isConnectingRef.current) return;
+    if (!isMountedRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
     // Check if we've exceeded max reconnect attempts
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      console.warn(`P2P: Max reconnect attempts (${maxReconnectAttempts}) reached. Stopping reconnection.`);
+    if (reconnectAttemptsRef.current >= maxReconnectAttemptsRef.current) {
+      console.warn(`P2P: Max reconnect attempts (${maxReconnectAttemptsRef.current}) reached. Stopping reconnection.`);
       return;
     }
 
     isConnectingRef.current = true;
-    console.log(`Connecting to P2P WebSocket: ${url} (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
+    const currentUrl = wsUrlRef.current;
+    console.log(`Connecting to P2P WebSocket: ${currentUrl} (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttemptsRef.current})`);
 
     try {
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(currentUrl);
 
       ws.onopen = () => {
+        if (!isMountedRef.current) {
+          ws.close(1000, 'Component unmounted');
+          return;
+        }
         console.log('P2P WebSocket connected!');
         isConnectingRef.current = false;
         reconnectAttemptsRef.current = 0; // Reset on successful connection
@@ -177,15 +216,21 @@ export function useP2P(options: UseP2POptions = {}) {
         console.log('P2P WebSocket disconnected:', event.code);
         isConnectingRef.current = false;
         wsRef.current = null;
+
+        if (!isMountedRef.current) return;
         setState(s => ({ ...s, connected: false }));
 
         // Auto-reconnect with exponential backoff if not a clean close
-        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
+        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttemptsRef.current && isMountedRef.current) {
           reconnectAttemptsRef.current++;
           // Exponential backoff: 3s, 6s, 12s, 24s, 48s...
-          const backoffDelay = reconnectInterval * Math.pow(2, reconnectAttemptsRef.current - 1);
+          const backoffDelay = reconnectIntervalRef.current * Math.pow(2, reconnectAttemptsRef.current - 1);
           console.log(`P2P: Reconnecting in ${backoffDelay / 1000}s...`);
-          reconnectTimerRef.current = window.setTimeout(connect, backoffDelay);
+          reconnectTimerRef.current = setTimeout(() => {
+            if (isMountedRef.current) {
+              connect();
+            }
+          }, backoffDelay);
         }
       };
 
@@ -209,8 +254,9 @@ export function useP2P(options: UseP2POptions = {}) {
       console.error('P2P WebSocket connection error:', err);
       isConnectingRef.current = false;
     }
-  }, [url, reconnectInterval, maxReconnectAttempts, handleMessage, fetchPeers, fetchInfo]);
+  }, [fetchInfo, fetchPeers, handleMessage]);
 
+  // Send chat message
   const sendChat = useCallback((content: string, to?: string) => {
     console.log('sendChat called:', { content, to, readyState: wsRef.current?.readyState });
 
@@ -243,6 +289,7 @@ export function useP2P(options: UseP2POptions = {}) {
     });
   }, []);
 
+  // Disconnect from WebSocket
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
@@ -258,15 +305,16 @@ export function useP2P(options: UseP2POptions = {}) {
 
   // Reset connection state and retry connecting
   const resetConnection = useCallback(() => {
+    reconnectAttemptsRef.current = 0;
     disconnect();
-    setTimeout(() => connect(), 100);
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        connect();
+      }
+    }, 100);
   }, [disconnect, connect]);
 
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
-
+  // Generate graph data from peers
   const graphData = useCallback((): { nodes: GraphNode[]; links: GraphLink[] } => {
     const nodes: GraphNode[] = Array.from(state.peers.values()).map(peer => ({
       id: peer.id,
@@ -288,6 +336,17 @@ export function useP2P(options: UseP2POptions = {}) {
     return { nodes, links };
   }, [state.peers, state.localPeerId]);
 
+  // Connect on mount, disconnect on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    connect();
+
+    return () => {
+      isMountedRef.current = false;
+      disconnect();
+    };
+  }, []); // Empty deps - only run on mount/unmount
+
   return {
     ...state,
     sendChat,
@@ -297,3 +356,5 @@ export function useP2P(options: UseP2POptions = {}) {
     refreshPeers: fetchPeers,
   };
 }
+
+export default useP2P;
