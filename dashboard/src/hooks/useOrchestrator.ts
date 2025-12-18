@@ -135,12 +135,31 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}) {
       completedWorkloads: workloadsList.filter(w => w.status === 'completed').length,
       failedWorkloads: workloadsList.filter(w => w.status === 'failed').length,
       resources: {
-        totalCpu: nodesList.reduce((acc, n) => acc + n.cpu.cores, 0),
-        usedCpu: nodesList.reduce((acc, n) => acc + (n.cpu.cores * n.cpu.usage / 100), 0),
-        totalMemory: nodesList.reduce((acc, n) => acc + n.memory.total, 0),
-        usedMemory: nodesList.reduce((acc, n) => acc + n.memory.used, 0),
-        totalStorage: nodesList.reduce((acc, n) => acc + n.disk.total, 0),
-        usedStorage: nodesList.reduce((acc, n) => acc + n.disk.used, 0),
+        // Handle both real API (resources_capacity) and mock format (cpu/memory/disk)
+        totalCpu: nodesList.reduce((acc, n) => acc + (n.resources_capacity?.cpu_cores ?? n.cpu?.cores ?? 0), 0),
+        usedCpu: nodesList.reduce((acc, n) => {
+          if (n.resources_capacity?.cpu_cores) {
+            const used = n.resources_capacity.cpu_cores - (n.resources_allocatable?.cpu_cores ?? 0);
+            return acc + used;
+          }
+          return acc + ((n.cpu?.cores ?? 0) * (n.cpu?.usage ?? 0) / 100);
+        }, 0),
+        totalMemory: nodesList.reduce((acc, n) => acc + ((n.resources_capacity?.memory_mb ?? 0) * 1024 * 1024 || n.memory?.total || 0), 0),
+        usedMemory: nodesList.reduce((acc, n) => {
+          if (n.resources_capacity?.memory_mb) {
+            const usedMb = n.resources_capacity.memory_mb - (n.resources_allocatable?.memory_mb ?? 0);
+            return acc + usedMb * 1024 * 1024;
+          }
+          return acc + (n.memory?.used ?? 0);
+        }, 0),
+        totalStorage: nodesList.reduce((acc, n) => acc + ((n.resources_capacity?.disk_mb ?? 0) * 1024 * 1024 || n.disk?.total || 0), 0),
+        usedStorage: nodesList.reduce((acc, n) => {
+          if (n.resources_capacity?.disk_mb) {
+            const usedMb = n.resources_capacity.disk_mb - (n.resources_allocatable?.disk_mb ?? 0);
+            return acc + usedMb * 1024 * 1024;
+          }
+          return acc + (n.disk?.used ?? 0);
+        }, 0),
       },
       throughput: {
         workloadsPerHour: 45,
@@ -186,7 +205,7 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}) {
       // Process nodes
       if (nodesRes.status === 'fulfilled' && nodesRes.value.ok) {
         const data = await nodesRes.value.json();
-        const nodesArray = data.nodes || data || [];
+        const nodesArray = data.items || data.nodes || data || [];
         const nodesMap = new Map<string, NodeHealth>();
         for (const node of nodesArray) {
           nodesMap.set(node.nodeId || node.id, node);
@@ -198,7 +217,7 @@ export function useOrchestrator(options: UseOrchestratorOptions = {}) {
       // Process workloads
       if (workloadsRes.status === 'fulfilled' && workloadsRes.value.ok) {
         const data = await workloadsRes.value.json();
-        const workloadsArray = data.workloads || data || [];
+        const workloadsArray = data.items || data.workloads || data || [];
         const workloadsMap = new Map<string, Workload>();
         for (const workload of workloadsArray) {
           workloadsMap.set(workload.id, workload);

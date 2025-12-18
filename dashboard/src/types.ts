@@ -236,44 +236,81 @@ export interface Workload {
   metadata?: Record<string, unknown>;
 }
 
-export type NodeHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'offline';
+export type NodeHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'offline' | 'Ready' | 'NotReady';
 
+// Resource capacity/allocatable from real API
+export interface ResourceCapacity {
+  cpu_cores: number;
+  memory_mb: number;
+  disk_mb: number;
+}
+
+// Real API node format
+export interface ApiNode {
+  id: string;
+  address: string;
+  status: 'Ready' | 'NotReady';
+  resources_capacity: ResourceCapacity;
+  resources_allocatable: ResourceCapacity;
+}
+
+// Normalized NodeHealth that works with both mock and real API
 export interface NodeHealth {
+  // Core fields (required)
   nodeId: string;
   nodeName: string;
   status: NodeHealthStatus;
-  lastHeartbeat: number;
-  uptime: number; // seconds
-  cpu: {
+
+  // Real API fields (from orchestrator)
+  address?: string;
+  resources_capacity?: ResourceCapacity;
+  resources_allocatable?: ResourceCapacity;
+
+  // Legacy mock fields (optional for backwards compatibility)
+  lastHeartbeat?: number;
+  uptime?: number; // seconds
+  cpu?: {
     usage: number; // percentage 0-100
     cores: number;
     temperature?: number;
   };
-  memory: {
+  memory?: {
     used: number; // bytes
     total: number;
     available: number;
   };
-  disk: {
+  disk?: {
     used: number;
     total: number;
     readRate: number; // bytes/sec
     writeRate: number;
   };
-  network: {
+  network?: {
     bytesIn: number;
     bytesOut: number;
     connections: number;
     latency: number; // ms
   };
-  workloads: {
+  workloads?: {
     running: number;
     queued: number;
     completed: number;
     failed: number;
   };
-  version: string;
+  version?: string;
   region?: string;
+}
+
+// Helper to convert API node to NodeHealth
+export function apiNodeToNodeHealth(node: ApiNode): NodeHealth {
+  return {
+    nodeId: node.id,
+    nodeName: node.id.slice(0, 8), // Use first 8 chars of ID as name
+    status: node.status,
+    address: node.address,
+    resources_capacity: node.resources_capacity,
+    resources_allocatable: node.resources_allocatable,
+  };
 }
 
 export interface ClusterMetrics {

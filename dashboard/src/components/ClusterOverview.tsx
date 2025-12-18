@@ -49,9 +49,9 @@ export function ClusterOverview({
     return {
       nodes: {
         total: nodesList.length,
-        healthy: nodesList.filter(n => n.status === 'healthy').length,
+        healthy: nodesList.filter(n => n.status === 'healthy' || n.status === 'Ready').length,
         degraded: nodesList.filter(n => n.status === 'degraded').length,
-        unhealthy: nodesList.filter(n => n.status === 'unhealthy').length,
+        unhealthy: nodesList.filter(n => n.status === 'unhealthy' || n.status === 'NotReady').length,
         offline: nodesList.filter(n => n.status === 'offline').length,
       },
       workloads: {
@@ -62,12 +62,31 @@ export function ClusterOverview({
         failed: workloadsList.filter(w => w.status === 'failed').length,
       },
       resources: {
-        totalCpu: nodesList.reduce((acc, n) => acc + n.cpu.cores, 0),
-        usedCpu: nodesList.reduce((acc, n) => acc + (n.cpu.cores * n.cpu.usage / 100), 0),
-        totalMemory: nodesList.reduce((acc, n) => acc + n.memory.total, 0),
-        usedMemory: nodesList.reduce((acc, n) => acc + n.memory.used, 0),
-        totalStorage: nodesList.reduce((acc, n) => acc + n.disk.total, 0),
-        usedStorage: nodesList.reduce((acc, n) => acc + n.disk.used, 0),
+        // Handle both real API (resources_capacity) and mock format (cpu/memory/disk)
+        totalCpu: nodesList.reduce((acc, n) => acc + (n.resources_capacity?.cpu_cores ?? n.cpu?.cores ?? 0), 0),
+        usedCpu: nodesList.reduce((acc, n) => {
+          if (n.resources_capacity?.cpu_cores) {
+            const used = n.resources_capacity.cpu_cores - (n.resources_allocatable?.cpu_cores ?? 0);
+            return acc + used;
+          }
+          return acc + ((n.cpu?.cores ?? 0) * (n.cpu?.usage ?? 0) / 100);
+        }, 0),
+        totalMemory: nodesList.reduce((acc, n) => acc + ((n.resources_capacity?.memory_mb ?? 0) * 1024 * 1024 || n.memory?.total || 0), 0),
+        usedMemory: nodesList.reduce((acc, n) => {
+          if (n.resources_capacity?.memory_mb) {
+            const usedMb = n.resources_capacity.memory_mb - (n.resources_allocatable?.memory_mb ?? 0);
+            return acc + usedMb * 1024 * 1024;
+          }
+          return acc + (n.memory?.used ?? 0);
+        }, 0),
+        totalStorage: nodesList.reduce((acc, n) => acc + ((n.resources_capacity?.disk_mb ?? 0) * 1024 * 1024 || n.disk?.total || 0), 0),
+        usedStorage: nodesList.reduce((acc, n) => {
+          if (n.resources_capacity?.disk_mb) {
+            const usedMb = n.resources_capacity.disk_mb - (n.resources_allocatable?.disk_mb ?? 0);
+            return acc + usedMb * 1024 * 1024;
+          }
+          return acc + (n.disk?.used ?? 0);
+        }, 0),
       },
     };
   }, [nodes, workloads]);
@@ -99,16 +118,23 @@ export function ClusterOverview({
     ? Math.round((metrics.healthyNodes / metrics.totalNodes) * 100)
     : 0;
 
-  const cpuUsagePercent = metrics.resources.totalCpu > 0
-    ? Math.round((metrics.resources.usedCpu / metrics.resources.totalCpu) * 100)
+  // Safely access resources with fallback to liveStats
+  const resources = metrics.resources || liveStats.resources || {
+    totalCpu: 0, usedCpu: 0,
+    totalMemory: 0, usedMemory: 0,
+    totalStorage: 0, usedStorage: 0,
+  };
+
+  const cpuUsagePercent = resources.totalCpu > 0
+    ? Math.round((resources.usedCpu / resources.totalCpu) * 100)
     : 0;
 
-  const memoryUsagePercent = metrics.resources.totalMemory > 0
-    ? Math.round((metrics.resources.usedMemory / metrics.resources.totalMemory) * 100)
+  const memoryUsagePercent = resources.totalMemory > 0
+    ? Math.round((resources.usedMemory / resources.totalMemory) * 100)
     : 0;
 
-  const storageUsagePercent = metrics.resources.totalStorage > 0
-    ? Math.round((metrics.resources.usedStorage / metrics.resources.totalStorage) * 100)
+  const storageUsagePercent = resources.totalStorage > 0
+    ? Math.round((resources.usedStorage / resources.totalStorage) * 100)
     : 0;
 
   return (
@@ -236,7 +262,7 @@ export function ClusterOverview({
                 />
               </div>
               <div className="mt-2 text-xs text-soft-gray">
-                {Math.round(metrics.resources.usedCpu)} / {metrics.resources.totalCpu} cores
+                {Math.round(resources.usedCpu)} / {resources.totalCpu} cores
               </div>
             </div>
 
@@ -262,7 +288,7 @@ export function ClusterOverview({
                 />
               </div>
               <div className="mt-2 text-xs text-soft-gray">
-                {formatBytes(metrics.resources.usedMemory)} / {formatBytes(metrics.resources.totalMemory)}
+                {formatBytes(resources.usedMemory)} / {formatBytes(resources.totalMemory)}
               </div>
             </div>
 
@@ -289,7 +315,7 @@ export function ClusterOverview({
                 />
               </div>
               <div className="mt-2 text-xs text-soft-gray">
-                {formatBytes(metrics.resources.usedStorage)} / {formatBytes(metrics.resources.totalStorage)}
+                {formatBytes(resources.usedStorage)} / {formatBytes(resources.totalStorage)}
               </div>
             </div>
           </div>
