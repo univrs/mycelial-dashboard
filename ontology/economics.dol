@@ -1,0 +1,373 @@
+// PROSPECTIVE: Mycelial Economics (Credits System)
+// This spec defines the economic layer for Mycelial Network
+// Implementation: mycelial-dashboard/crates/mycelial-protocol
+
+system mycelial.economics @ 0.1.0 {
+  requires univrs.identity >= 0.1.0      // Cryptographic identity
+  requires mycelial.peer >= 0.1.0        // Peer reputation
+  requires univrs.storage >= 0.1.0       // Transaction storage
+  
+  provides mycelial_credits
+  provides resource_accounting
+  provides incentive_alignment
+}
+
+exegesis {
+  Mycelial Credits are a reputation-weighted resource accounting system.
+  
+  Core principles:
+  1. NOT CRYPTOCURRENCY: Credits track contribution, not speculation
+  2. EARNED, NOT BOUGHT: Credits come from network participation
+  3. DECAY OVER TIME: Hoarding is discouraged
+  4. LOCAL VALIDATION: No global consensus needed
+  
+  Purpose:
+  - Incentivize resource sharing (bandwidth, storage, compute)
+  - Reward helpful network participation
+  - Enable fair resource allocation
+  - Prevent free-riding
+  
+  This is NOT:
+  - A currency (cannot be exchanged for fiat)
+  - An investment (has no speculative value)
+  - A blockchain (no global ledger)
+}
+
+// === CREDITS ===
+
+gene economics.credit {
+  credit has amount               // Positive integer
+  credit has holder               // Peer who owns credits
+  credit has earned_at            // When credits were earned
+  credit has source               // How they were earned
+  credit has expires_at           // When credits decay
+  
+  amount is non_negative
+  credits decay linearly over 30 days
+  credits cannot be transferred directly
+}
+
+gene economics.credit_balance {
+  balance has peer_id
+  balance has total               // Sum of all credits
+  balance has available           // Total minus committed
+  balance has committed           // Reserved for active services
+  balance has earned_lifetime     // Historical total earned
+  
+  available = total - committed
+  available >= 0 always
+}
+
+trait economics.get_balance {
+  get_balance takes peer_id
+  get_balance returns balance
+  
+  balance is local view
+  balance may differ across peers (eventual consistency)
+}
+
+// === EARNING CREDITS ===
+
+gene economics.earning_event {
+  event has peer_id               // Who earned
+  event has amount                // How much
+  event has reason                // Why earned
+  event has timestamp
+  event has attestor              // Who granted credits
+  event has signature             // Proof of attestor
+  
+  reason is one of:
+    bandwidth_provided            // Relayed data for others
+    storage_provided              // Stored data for others
+    uptime_bonus                  // Stayed online consistently
+    helpful_peer                  // Positive attestations
+    bootstrap_service             // Ran bootstrap node
+    content_creation              // Created valuable content
+}
+
+trait economics.earn_credits {
+  earn_credits takes amount
+  earn_credits takes reason
+  earn_credits granted by attestor
+  
+  attestor signs earning event
+  earning event is broadcast
+  peer's balance increases
+  
+  // Credits are granted by peers who benefited
+  // Not mined or purchased
+}
+
+gene economics.earning_rate {
+  // Approximate earning rates per hour
+  rate_bandwidth is 10 credits per GB relayed
+  rate_storage is 1 credit per GB-hour stored
+  rate_uptime is 5 credits per hour online
+  rate_attestation is 20 credits per positive attestation
+  
+  rates are adjustable by network consensus
+}
+
+// === SPENDING CREDITS ===
+
+gene economics.spending_event {
+  event has peer_id               // Who spent
+  event has amount                // How much
+  event has service               // What service used
+  event has provider              // Who provided service
+  event has timestamp
+  event has signature             // Spender's signature
+}
+
+trait economics.spend_credits {
+  spend_credits takes amount
+  spend_credits takes service
+  spend_credits takes provider
+  
+  precondition: available >= amount
+  postcondition: available decreases by amount
+  
+  // Credits are spent to access premium services
+  // Or to prioritize requests
+}
+
+gene economics.service_cost {
+  // Services that cost credits
+  service_costs include:
+    priority_relay        5 credits per request
+    extended_storage     10 credits per GB-day
+    video_streaming      20 credits per hour
+    premium_search        2 credits per query
+    
+  basic_services are free (best-effort)
+  premium_services require credits
+}
+
+// === COMMITMENTS ===
+
+gene economics.commitment {
+  commitment has peer_id          // Who is committing
+  commitment has amount           // Credits committed
+  commitment has purpose          // What for
+  commitment has duration         // How long
+  commitment has created_at
+  commitment has expires_at
+  commitment has signature
+  
+  commitment locks credits
+  commitment is released on completion
+  commitment is forfeited on failure
+}
+
+trait economics.create_commitment {
+  create_commitment takes amount
+  create_commitment takes purpose
+  create_commitment takes duration
+  create_commitment returns commitment
+  
+  available credits decrease
+  committed credits increase
+  commitment is published
+  
+  // Commitments are promises to provide service
+  // Credits are locked as collateral
+}
+
+trait economics.release_commitment {
+  release_commitment takes commitment_id
+  release_commitment takes outcome       // Success or failure
+  
+  if success:
+    return credits to available
+    possibly earn bonus credits
+  if failure:
+    forfeit portion of credits
+    reputation impact
+}
+
+// === DECAY ===
+
+gene economics.decay {
+  decay is linear over decay_period
+  decay_period is 30 days
+  decay reduces credit value over time
+  decay encourages spending not hoarding
+  
+  credit_value(age) = amount * (1 - age/decay_period)
+  credit_value(30 days) = 0
+}
+
+trait economics.apply_decay {
+  apply_decay runs periodically (daily)
+  apply_decay reduces old credits
+  apply_decay removes expired credits
+  
+  // Automatic, no action needed
+}
+
+// === RESOURCE ACCOUNTING ===
+
+gene economics.resource_usage {
+  usage has peer_id
+  usage has resource_type         // Bandwidth, storage, compute
+  usage has amount                // Quantity used
+  usage has period                // Time period
+  
+  resource_type is one of:
+    bandwidth_in                  // Data received
+    bandwidth_out                 // Data sent
+    storage                       // Disk space used
+    relay_bandwidth               // Data relayed for others
+}
+
+trait economics.track_usage {
+  track_usage monitors resource consumption
+  track_usage aggregates by period
+  track_usage triggers earning events
+  
+  // Automatic tracking
+  // Basis for credit earning
+}
+
+gene economics.resource_quota {
+  quota has peer_id
+  quota has resource_type
+  quota has limit                 // Max allowed
+  quota has period                // Per hour/day/month
+  
+  // Quotas based on credit balance
+  higher_balance = higher_quota
+}
+
+// === INCENTIVE MECHANISMS ===
+
+gene economics.incentive {
+  incentive aligns peer behavior with network good
+  
+  positive_incentives:
+    staying_online               // Earn uptime credits
+    sharing_bandwidth            // Earn relay credits
+    providing_storage            // Earn storage credits
+    making_attestations          // Earn attestation credits
+    
+  negative_incentives:
+    going_offline_frequently     // Lose reliability reputation
+    failing_commitments          // Forfeit committed credits
+    spam_behavior                // Negative attestations
+}
+
+trait economics.calculate_priority {
+  calculate_priority takes peer_id
+  calculate_priority takes request_type
+  calculate_priority returns priority_score
+  
+  priority factors:
+    credit_balance               // More credits = higher priority
+    reputation_score             // Better reputation = higher priority
+    commitment_level             // Active commitments boost priority
+    
+  // High-priority requests processed first
+  // Prevents tragedy of commons
+}
+
+// === FAIRNESS ===
+
+gene economics.fairness {
+  fairness prevents credit monopolization
+  
+  mechanisms:
+    earning_caps                 // Max credits per day
+    decay                        // Credits expire
+    reputation_weighting         // Attestations weighted by reputation
+    
+  // No one can dominate through credit accumulation
+}
+
+constraint economics.no_negative_balance {
+  balance can never go negative
+  spending requires sufficient credits
+  
+  // Prevents debt
+}
+
+constraint economics.no_direct_transfer {
+  credits cannot be sent peer-to-peer
+  credits must be earned through service
+  
+  // Prevents credit markets/speculation
+}
+
+constraint economics.decay_is_mandatory {
+  all credits decay over time
+  no permanent credits
+  
+  // Ensures active participation
+}
+
+// === DISPUTES ===
+
+gene economics.dispute {
+  dispute has complainant         // Who is complaining
+  dispute has respondent          // Who is being complained about
+  dispute has commitment          // Related commitment
+  dispute has reason              // What went wrong
+  dispute has evidence            // Supporting data
+}
+
+trait economics.raise_dispute {
+  raise_dispute takes commitment
+  raise_dispute takes reason
+  raise_dispute takes evidence
+  
+  dispute is published to network
+  peers can add attestations
+  resolution is reputation-based
+  
+  // No central authority
+  // Community resolves disputes
+}
+
+// === ANALYTICS ===
+
+trait economics.get_statistics {
+  get_statistics takes peer_id
+  get_statistics returns stats
+  
+  stats include:
+    total_earned
+    total_spent
+    current_balance
+    earning_rate
+    reputation_trend
+    active_commitments
+}
+
+// === CONSTRAINTS ===
+
+constraint economics.local_accounting {
+  each peer tracks own view of credits
+  no global ledger
+  eventual consistency acceptable
+  
+  // Scalability over global consensus
+}
+
+constraint economics.reputation_linked {
+  credit earning is reputation-weighted
+  high reputation earns more
+  low reputation earns less
+  
+  // Quality over quantity
+}
+
+// === ERROR TYPES ===
+
+trait economics.errors {
+  insufficient_credits means balance too low
+  commitment_active means credits locked
+  decay_expired means credits no longer valid
+  earning_capped means daily limit reached
+  
+  errors include current_balance
+  errors are recoverable
+}

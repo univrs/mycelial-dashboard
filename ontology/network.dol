@@ -1,0 +1,301 @@
+// PROSPECTIVE: P2P Network Foundation
+// This spec defines the core P2P networking primitives for Mycelial Network
+// Implementation: mycelial-dashboard/crates/mycelial-network
+
+system mycelial.network @ 0.1.0 {
+  requires univrs.identity >= 0.1.0    // Ed25519 cryptographic identity
+  requires stdlib.information >= 0.1.0 // Information theory primitives
+  
+  provides peer_identity
+  provides peer_discovery
+  provides message_routing
+  provides gossip_protocol
+}
+
+exegesis {
+  The network layer is the foundation of all P2P communication.
+  
+  Core principles:
+  1. DECENTRALIZED: No central server required
+  2. RESILIENT: Network survives node failures
+  3. PRIVATE: End-to-end encryption by default
+  4. EFFICIENT: Minimal bandwidth, maximum reach
+  
+  Built on libp2p, which provides:
+  - Multiple transports (QUIC, TCP, WebSocket, WebRTC)
+  - NAT traversal (AutoNAT, hole punching)
+  - Peer discovery (mDNS, Kademlia DHT)
+  - Pub/sub messaging (Gossipsub)
+  
+  This ontology defines WHAT the network does.
+  libp2p defines HOW it's implemented.
+}
+
+// === PEER IDENTITY ===
+
+gene network.peer {
+  peer has identity              // From univrs-identity
+  peer has addresses             // Multiaddrs where reachable
+  peer has protocols             // Supported protocol versions
+  peer has metadata              // Name, version, capabilities
+  
+  identity is univrs.identity.public_key
+  identity is globally_unique
+  identity is self_certifying    // No CA needed
+}
+
+gene network.peer_id {
+  peer_id is derived from public_key
+  peer_id is libp2p compatible
+  peer_id is base58 encoded for display
+  
+  // Same identity, different encodings:
+  // univrs: PublicKey (32 bytes)
+  // libp2p: PeerId (multihash of public key)
+  // display: Base58 string
+}
+
+gene network.multiaddr {
+  multiaddr is self_describing address
+  multiaddr encodes protocol stack
+  
+  examples:
+    /ip4/192.168.1.1/tcp/9000
+    /ip4/192.168.1.1/udp/9000/quic-v1
+    /dns4/bootstrap.mycelial.network/tcp/9000
+    /ip4/127.0.0.1/tcp/9000/ws
+  
+  multiaddr is composable
+  multiaddr is transport agnostic
+}
+
+// === PEER DISCOVERY ===
+
+trait network.discover {
+  discover finds peers in the network
+  discover returns stream of peer_info
+  
+  discovery_methods include:
+    mdns        // Local network (LAN)
+    dht         // Distributed hash table (Kademlia)
+    bootstrap   // Known seed nodes
+    rendezvous  // Meeting point servers
+  
+  is information.sensing
+}
+
+gene network.discovery_event {
+  event has peer_id
+  event has addresses
+  event has event_type
+  
+  event_type is one of:
+    discovered   // New peer found
+    expired      // Peer no longer reachable
+    updated      // Peer addresses changed
+}
+
+trait network.bootstrap {
+  bootstrap connects to known seed nodes
+  bootstrap populates initial routing table
+  
+  bootstrap_nodes are well_known addresses
+  bootstrap_nodes are hardcoded or configured
+  
+  precondition: at least one bootstrap node reachable
+  postcondition: peer has entries in routing table
+}
+
+// === MESSAGE ROUTING ===
+
+gene network.message {
+  message has sender          // PeerId of originator
+  message has topic           // Pub/sub topic name
+  message has payload         // Application data (bytes)
+  message has signature       // Proof of sender
+  message has sequence        // Ordering within sender
+  
+  message is signed by sender
+  message is verified before delivery
+}
+
+trait network.publish {
+  publish sends message to topic subscribers
+  publish takes topic
+  publish takes payload
+  
+  message is signed with local keypair
+  message is propagated via gossip
+  
+  delivery is best_effort
+  delivery is not guaranteed
+  delivery reaches most subscribers eventually
+  
+  is information.channel.send
+}
+
+trait network.subscribe {
+  subscribe registers interest in topic
+  subscribe returns message_stream
+  
+  messages are filtered by topic
+  messages are verified before delivery
+  duplicate messages are suppressed
+  
+  is information.channel.receive
+}
+
+// === GOSSIP PROTOCOL ===
+
+gene network.gossip {
+  gossip is epidemic message propagation
+  gossip reaches all peers eventually
+  gossip tolerates node failures
+  
+  gossip uses mesh topology
+  gossip uses random selection
+  gossip has fanout parameter (default: 6)
+}
+
+trait network.gossip_propagate {
+  propagate forwards message to mesh peers
+  propagate selects subset of connected peers
+  propagate avoids sending back to source
+  
+  fanout determines peer count
+  seen_cache prevents loops
+  
+  is information.broadcast
+}
+
+gene network.mesh {
+  mesh is subset of connected peers
+  mesh is maintained per topic
+  mesh target size is configurable (default: 6)
+  
+  mesh is pruned when too large
+  mesh is grafted when too small
+}
+
+// === CONNECTION MANAGEMENT ===
+
+gene network.connection {
+  connection has local_peer
+  connection has remote_peer
+  connection has transport        // QUIC, TCP, WebSocket
+  connection has direction        // Inbound or Outbound
+  connection has established_at
+  
+  connection is multiplexed       // Multiple streams per connection
+  connection is encrypted         // Noise protocol
+}
+
+trait network.connect {
+  connect establishes connection to peer
+  connect takes peer_id
+  connect takes addresses (optional, can use DHT)
+  
+  connect negotiates protocols
+  connect performs handshake
+  connect establishes encryption
+  
+  postcondition: connection is ready for streams
+}
+
+trait network.disconnect {
+  disconnect closes connection gracefully
+  disconnect notifies remote peer
+  disconnect cleans up resources
+}
+
+gene network.connection_limits {
+  limits has max_connections_total
+  limits has max_connections_per_peer
+  limits has max_pending_incoming
+  limits has max_pending_outgoing
+  
+  // Reasonable defaults
+  max_connections_total is 100
+  max_connections_per_peer is 2
+}
+
+// === NAT TRAVERSAL ===
+
+trait network.nat_detect {
+  nat_detect determines NAT type
+  nat_detect returns nat_status
+  
+  nat_status is one of:
+    public          // Directly reachable
+    nat_symmetric   // Hard NAT, needs relay
+    nat_restricted  // Hole punching possible
+    unknown         // Cannot determine
+}
+
+trait network.hole_punch {
+  hole_punch attempts direct connection through NAT
+  hole_punch coordinates via relay
+  hole_punch uses simultaneous connect
+  
+  success_rate varies by NAT type
+  fallback is relay if punch fails
+}
+
+gene network.relay {
+  relay is intermediary node
+  relay forwards traffic between NATed peers
+  relay is used when direct connection fails
+  
+  relay adds latency
+  relay consumes relay node bandwidth
+  relay is last resort
+}
+
+// === CONSTRAINTS ===
+
+constraint network.identity_binding {
+  all messages are signed
+  signature binds message to sender identity
+  unsigned messages are rejected
+  
+  // Prevents impersonation
+  // Enables reputation systems
+}
+
+constraint network.transport_independence {
+  application logic is transport agnostic
+  same message over QUIC, TCP, or WebSocket
+  transport selection is automatic
+  
+  // Application doesn't care HOW message arrives
+}
+
+constraint network.eventual_delivery {
+  published messages eventually reach all subscribers
+  "eventually" is bounded by network diameter
+  delivery order is not guaranteed
+  
+  // Gossip provides probabilistic guarantee
+  // Not suitable for strict ordering requirements
+}
+
+constraint network.resource_bounds {
+  connections are bounded by limits
+  messages have max size
+  bandwidth is rate limited
+  
+  // Prevents resource exhaustion attacks
+}
+
+// === ERROR HANDLING ===
+
+trait network.errors {
+  connection_failed means cannot reach peer
+  dial_error means address unreachable
+  protocol_error means incompatible versions
+  signature_invalid means message rejected
+  topic_not_subscribed means not listening
+  
+  errors are recoverable with retry
+  errors include diagnostic info
+}

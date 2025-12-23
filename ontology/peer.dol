@@ -1,0 +1,345 @@
+// PROSPECTIVE: P2P Peer Identity & Reputation
+// This spec defines peer identity and trust for Mycelial Network
+// Implementation: mycelial-dashboard/crates/mycelial-core
+
+system mycelial.peer @ 0.1.0 {
+  requires univrs.identity >= 0.1.0      // Ed25519 foundation
+  requires mycelial.network >= 0.1.0     // Network primitives
+  
+  provides peer_identity
+  provides peer_profile
+  provides reputation_system
+  provides trust_web
+}
+
+exegesis {
+  Peer identity extends cryptographic identity with social context.
+  
+  Core principles:
+  1. SELF-SOVEREIGN: You own your identity, no authority can revoke it
+  2. PORTABLE: Same identity works across all Mycelial services
+  3. REPUTATION-BASED: Trust is earned through behavior
+  4. WEB OF TRUST: Peers vouch for each other
+  
+  Identity layers:
+  - Cryptographic: Ed25519 keypair (univrs-identity)
+  - Network: libp2p PeerId derived from public key
+  - Social: Name, avatar, bio, reputation
+  - Attestations: Claims made by others about you
+}
+
+// === PEER IDENTITY ===
+
+gene peer.identity {
+  identity has keypair            // From univrs-identity
+  identity has peer_id            // libp2p format
+  identity has display_id         // Short human-readable
+  
+  keypair is persistent           // Same across sessions
+  keypair is stored encrypted     // Password protected
+  
+  peer_id is derived from public_key
+  display_id is first 8 chars of base58
+}
+
+trait peer.generate_identity {
+  generate_identity creates new peer
+  generate_identity takes passphrase
+  generate_identity returns identity
+  
+  keypair is randomly generated
+  keypair is saved encrypted
+  
+  // This is the "birth" of a peer
+  // Can only happen once per installation
+  // Migration requires explicit export/import
+}
+
+trait peer.load_identity {
+  load_identity restores existing peer
+  load_identity takes passphrase
+  load_identity returns identity or error
+  
+  if passphrase wrong:
+    return authentication_error
+  if file corrupted:
+    return corruption_error
+}
+
+trait peer.export_identity {
+  export_identity creates portable backup
+  export_identity takes passphrase       // New passphrase for export
+  export_identity returns encrypted_bundle
+  
+  bundle contains keypair
+  bundle is password protected
+  bundle can be imported elsewhere
+  
+  // For device migration
+}
+
+// === PEER PROFILE ===
+
+gene peer.profile {
+  profile has peer_id             // Links to identity
+  profile has name                // Display name
+  profile has avatar              // Image hash (IPFS/P2P)
+  profile has bio                 // Short description
+  profile has links               // Website, social, etc.
+  profile has updated_at          // Last modification
+  profile has signature           // Self-signed
+  
+  profile is self_attested        // You define your own profile
+  profile is signed by owner      // Proves you wrote it
+  profile is propagated via gossip
+}
+
+trait peer.update_profile {
+  update_profile takes fields     // name, avatar, bio, links
+  update_profile signs with keypair
+  update_profile broadcasts to network
+  
+  old profile is superseded
+  peers update their cache
+}
+
+trait peer.resolve_profile {
+  resolve_profile takes peer_id
+  resolve_profile returns profile or none
+  
+  check local cache first
+  query DHT if not cached
+  verify signature before accepting
+  
+  // Profile resolution is async
+  // May return partial/cached data
+}
+
+// === REPUTATION ===
+
+gene peer.reputation {
+  reputation has peer_id          // Whose reputation
+  reputation has score            // Aggregate score
+  reputation has dimensions       // Breakdown by category
+  reputation has attestation_count // How many attestations
+  
+  score is bounded 0 to 100
+  score is computed from attestations
+  score decays over time (recency matters)
+}
+
+gene peer.reputation_dimension {
+  dimension has name              // reliability, helpfulness, etc.
+  dimension has score             // 0-100 for this dimension
+  dimension has weight            // How much this matters
+  
+  common_dimensions include:
+    reliability     // Does peer stay online, respond promptly?
+    helpfulness     // Does peer contribute to network?
+    honesty         // Does peer behave as expected?
+    resource_sharing // Does peer share bandwidth/storage?
+}
+
+trait peer.get_reputation {
+  get_reputation takes peer_id
+  get_reputation returns reputation
+  
+  aggregate attestations from trusted peers
+  weight by attestor reputation (recursive)
+  apply decay for old attestations
+  
+  // Reputation is subjective
+  // Different peers may see different scores
+  // Based on their trust graph
+}
+
+// === ATTESTATIONS ===
+
+gene peer.attestation {
+  attestation has subject         // Who is being attested
+  attestation has attestor        // Who is attesting
+  attestation has claim           // What is being claimed
+  attestation has value           // Positive or negative
+  attestation has timestamp       // When attested
+  attestation has signature       // Proof of attestor
+  attestation has context         // Why (optional)
+  
+  claim is one of predefined types
+  value is -1 (negative), 0 (neutral), +1 (positive)
+  signature is by attestor's keypair
+}
+
+gene peer.attestation_claim {
+  // Predefined claim types
+  claim_types include:
+    met_in_person           // Physical verification
+    reliable_peer           // Good network citizen
+    helpful_interaction     // Positive experience
+    successful_transaction  // Trade/exchange worked
+    verified_human          // Not a bot
+    trusted_content         // Good content creator
+    
+    // Negative claims
+    spam_behavior           // Sends unwanted messages
+    unreliable             // Goes offline frequently
+    malicious              // Attempted attack/fraud
+}
+
+trait peer.create_attestation {
+  create_attestation takes subject
+  create_attestation takes claim
+  create_attestation takes value
+  create_attestation returns attestation
+  
+  attestation is signed
+  attestation is stored locally
+  attestation is published to network
+  
+  // You can attest about anyone
+  // Your attestation carries weight of your reputation
+}
+
+trait peer.verify_attestation {
+  verify_attestation takes attestation
+  verify_attestation returns valid or invalid
+  
+  check signature is valid
+  check attestor exists
+  check timestamp is reasonable
+  
+  // Anyone can verify any attestation
+  // Verification is cryptographic
+}
+
+// === WEB OF TRUST ===
+
+gene peer.trust_graph {
+  graph has nodes                 // Peers
+  graph has edges                 // Trust relationships
+  graph has local_peer            // Your position
+  
+  edges have weight               // Trust level
+  edges are directional           // A trusts B ≠ B trusts A
+}
+
+gene peer.trust_level {
+  trust_level is one of:
+    unknown     // No relationship
+    neutral     // Aware of, no opinion
+    trusted     // Positive attestations
+    blocked     // Explicitly distrusted
+    
+  trust_level affects:
+    message_priority           // Trusted messages processed first
+    reputation_weight          // Trusted attestations count more
+    content_visibility         // Can filter by trust level
+}
+
+trait peer.set_trust {
+  set_trust takes peer_id
+  set_trust takes level
+  
+  updates local trust graph
+  does NOT publish to network (private)
+  affects how you see their reputation
+}
+
+trait peer.compute_trust_path {
+  compute_trust_path takes source
+  compute_trust_path takes target
+  compute_trust_path returns path or none
+  
+  find shortest path through trust graph
+  path indicates degrees of separation
+  
+  // "Friend of a friend" trust
+}
+
+// === IDENTITY VERIFICATION ===
+
+gene peer.verification {
+  verification has peer_id
+  verification has method         // How verified
+  verification has verified_at
+  verification has verifier       // Who verified
+  
+  method is one of:
+    self_attested       // Just claimed
+    peer_vouched        // Another peer vouched
+    challenge_response  // Cryptographic proof
+    physical_meeting    // Met in person
+    external_proof      // Linked external account
+}
+
+trait peer.challenge_verify {
+  challenge_verify takes peer_id
+  challenge_verify sends random challenge
+  challenge_verify expects signed response
+  challenge_verify returns verified or failed
+  
+  // Proves peer controls private key
+  // Used for liveness checks
+}
+
+// === PROFILE SEARCH ===
+
+trait peer.search_peers {
+  search_peers takes query        // Name, interests, etc.
+  search_peers returns peer_list
+  
+  search local cache first
+  query DHT for broader search
+  rank by reputation and trust
+  
+  // Search is best-effort
+  // May not find all matching peers
+}
+
+// === CONSTRAINTS ===
+
+constraint peer.identity_immutability {
+  peer_id cannot change
+  keypair is permanent
+  
+  to "change identity":
+    create new identity
+    migrate relationships manually
+    
+  // Prevents reputation reset attacks
+}
+
+constraint peer.self_attestation_limits {
+  cannot positively attest self
+  can only update own profile
+  
+  reputation comes from others
+  profile comes from self
+}
+
+constraint peer.attestation_transparency {
+  all attestations are public
+  cannot secretly attest
+  attestations are permanent (append-only)
+  
+  // Public accountability
+}
+
+constraint peer.trust_locality {
+  trust graph is local
+  each peer has own view
+  no global trust score
+  
+  // Prevents gaming global metrics
+}
+
+// === ERROR TYPES ===
+
+trait peer.errors {
+  identity_not_found means peer unknown
+  signature_invalid means attestation rejected
+  self_attestation means cannot attest self
+  blocked_peer means peer is on block list
+  
+  errors are descriptive
+  errors include peer_id context
+}

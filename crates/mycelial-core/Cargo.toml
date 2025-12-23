@@ -17,6 +17,7 @@ thiserror.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 async-trait.workspace = true
+univrs-identity.workspace = true
 bs58 = "0.5"
 blake3 = "1.5"
 hex = "0.4"

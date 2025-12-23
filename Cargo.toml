@@ -43,6 +43,9 @@ serde_cbor = "0.11"
 ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }
 rand = "0.8"
 
+# Univrs shared crates
+univrs-identity = { path = "../univrs-identity" }
+
 # Database
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 

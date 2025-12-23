@@ -62,7 +62,7 @@ A **production-ready Peer-to-Peer agent network** implementing Mycelial Economic
 ## Cargo Workspace Structure
 
 ```
-mycelial-dashboard/
+univrs-network/                # Formerly mycelial-dashboard
 ├── Cargo.toml                 # Workspace root
 ├── CLAUDE.md                  # AI context (this file)
 ├── ROADMAP.md                 # Implementation progress

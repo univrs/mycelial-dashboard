@@ -20,11 +20,11 @@
 //! # Example
 //!
 //! ```rust
-//! use mycelial_core::{identity::Keypair, content::Content, peer::PeerInfo};
+//! use mycelial_core::{identity::{Keypair, KeypairExt}, content::Content, peer::PeerInfo};
 //!
 //! // Generate a new identity
 //! let keypair = Keypair::generate();
-//! let did = keypair.did();
+//! let did = keypair.did();  // Uses KeypairExt trait
 //! println!("My DID: {}", did);
 //!
 //! // Create content-addressed data
@@ -51,7 +51,10 @@ pub mod error;
 pub use error::{MycelialError, Result};
 
 // Identity re-exports
-pub use identity::{Did, Keypair, PublicKey, SignatureBytes, Signed};
+pub use identity::{
+    Did, Keypair, KeypairExt, PublicKey, PublicKeyExt,
+    Signature, SignatureBytes, Signed,
+};
 
 // Content re-exports
 pub use content::{Content, ContentId, ContentMetadata};

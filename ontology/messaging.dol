@@ -1,0 +1,393 @@
+// PROSPECTIVE: P2P Messaging System
+// This spec defines real-time messaging for Mycelial Network
+// Implementation: mycelial-dashboard/crates/mycelial-protocol
+
+system mycelial.messaging @ 0.1.0 {
+  requires mycelial.network >= 0.1.0     // P2P network layer
+  requires univrs.identity >= 0.1.0      // Cryptographic identity
+  requires univrs.storage >= 0.1.0       // Message persistence
+  
+  provides channels
+  provides direct_messages
+  provides presence
+  provides message_history
+}
+
+exegesis {
+  Messaging is the primary human interaction layer of Mycelial Network.
+  
+  Core principles:
+  1. END-TO-END ENCRYPTED: Only participants can read messages
+  2. DECENTRALIZED: No central server stores messages
+  3. OFFLINE CAPABLE: Messages sync when peers reconnect
+  4. VERIFIABLE: All messages are signed by sender
+  
+  Key differences from centralized chat:
+  - No single point of failure
+  - No server that can read your messages
+  - Messages live on participant devices
+  - History requires peer cooperation
+}
+
+// === CHANNELS ===
+
+gene messaging.channel {
+  channel has id                  // Unique identifier
+  channel has name                // Human-readable name
+  channel has description         // Purpose of channel
+  channel has creator             // Who created it
+  channel has created_at          // When created
+  channel has members             // Current participants
+  channel has settings            // Channel configuration
+  
+  id is derived from (creator, name, created_at)
+  id is deterministic
+  id is globally unique
+}
+
+gene messaging.channel_settings {
+  settings has visibility         // Public or private
+  settings has join_policy        // Open, invite, approval
+  settings has history_policy     // Ephemeral, persistent, timed
+  settings has encryption_mode    // Group key, pairwise
+  
+  visibility is one of:
+    public      // Discoverable, anyone can see exists
+    private     // Not discoverable, invite only
+  
+  join_policy is one of:
+    open        // Anyone can join
+    invite      // Must be invited by member
+    approval    // Must be approved by admin
+}
+
+trait messaging.create_channel {
+  create_channel takes name
+  create_channel takes settings
+  create_channel returns channel
+  
+  creator becomes admin
+  creator is first member
+  channel is announced to network (if public)
+  
+  is transformation.creation
+}
+
+trait messaging.join_channel {
+  join_channel takes channel_id
+  join_channel returns success or error
+  
+  if join_policy is open:
+    add member immediately
+  if join_policy is invite:
+    verify invitation exists
+  if join_policy is approval:
+    request approval from admin
+  
+  new member receives recent history
+  new member announced to other members
+}
+
+trait messaging.leave_channel {
+  leave_channel takes channel_id
+  
+  member is removed
+  other members notified
+  if last admin leaves:
+    promote oldest member OR archive channel
+}
+
+// === MESSAGES ===
+
+gene messaging.message {
+  message has id                  // Unique within channel
+  message has channel_id          // Which channel
+  message has sender              // Who sent it
+  message has content             // The message data
+  message has timestamp           // When sent
+  message has signature           // Proof of sender
+  message has reply_to            // Thread parent (optional)
+  message has attachments         // Media/files (optional)
+  
+  id is derived from (channel_id, sender, timestamp, content_hash)
+  signature covers all fields
+}
+
+gene messaging.content {
+  content has content_type        // text, markdown, code, etc.
+  content has body                // The actual content
+  content has encrypted           // Is body encrypted?
+  
+  content_type is one of:
+    text/plain
+    text/markdown
+    application/json
+    application/octet-stream
+}
+
+trait messaging.send_message {
+  send_message takes channel_id
+  send_message takes content
+  send_message returns message_id
+  
+  message is signed by sender
+  message is encrypted for channel
+  message is published to channel topic
+  message is stored locally
+  
+  precondition: sender is channel member
+  postcondition: message reaches online members
+}
+
+trait messaging.receive_message {
+  receive_message handles incoming messages
+  receive_message takes message
+  
+  verify signature
+  decrypt content
+  check sender is member
+  store in local history
+  notify UI
+  
+  if signature invalid:
+    reject message
+  if sender not member:
+    reject message
+}
+
+// === DIRECT MESSAGES ===
+
+gene messaging.direct_conversation {
+  conversation has participants   // Exactly 2 peers
+  conversation has id             // Derived from sorted peer IDs
+  
+  id is deterministic from participants
+  // Same pair always gets same conversation
+}
+
+trait messaging.send_direct {
+  send_direct takes recipient
+  send_direct takes content
+  
+  message is encrypted for recipient only
+  message is sent directly or via gossip
+  message is stored locally
+  
+  recipient receives via:
+    direct connection (if online)
+    gossip network (async delivery)
+    next sync (if offline)
+}
+
+// === PRESENCE ===
+
+gene messaging.presence {
+  presence has peer_id
+  presence has status             // Online, away, busy, offline
+  presence has last_seen          // Timestamp of last activity
+  presence has custom_status      // User-set message
+  
+  status is one of:
+    online      // Currently active
+    away        // Idle for > 5 minutes
+    busy        // Do not disturb
+    offline     // Not connected
+}
+
+trait messaging.update_presence {
+  update_presence takes status
+  update_presence takes custom_status (optional)
+  
+  presence is broadcast to contacts
+  presence expires after timeout
+  
+  // Presence is eventually consistent
+  // May lag actual status by seconds
+}
+
+trait messaging.subscribe_presence {
+  subscribe_presence takes peer_ids
+  subscribe_presence returns presence_stream
+  
+  receive updates when contacts change status
+  initial snapshot of current status
+}
+
+// === TYPING INDICATORS ===
+
+gene messaging.typing_indicator {
+  indicator has channel_id
+  indicator has peer_id
+  indicator has started_at
+  indicator expires_after 5 seconds
+}
+
+trait messaging.send_typing {
+  send_typing takes channel_id
+  
+  indicator is broadcast to channel
+  indicator is ephemeral (not stored)
+  indicator is throttled (max 1 per 3 seconds)
+}
+
+// === MESSAGE HISTORY ===
+
+gene messaging.history_window {
+  window has channel_id
+  window has start_time
+  window has end_time
+  window has messages            // Ordered by timestamp
+}
+
+trait messaging.fetch_history {
+  fetch_history takes channel_id
+  fetch_history takes time_range
+  fetch_history returns messages
+  
+  messages come from:
+    local_storage (fastest)
+    online_peers (if local incomplete)
+    
+  history may be incomplete if:
+    no peers online
+    peers have pruned old messages
+}
+
+trait messaging.sync_history {
+  sync_history takes channel_id
+  sync_history coordinates with peers
+  
+  compare local vs peer message sets
+  request missing messages
+  provide messages peer is missing
+  
+  // Bidirectional sync
+  // Eventually consistent
+}
+
+// === ENCRYPTION ===
+
+gene messaging.channel_key {
+  key has channel_id
+  key has version                 // Rotates on member change
+  key has encrypted_key           // Encrypted for each member
+  
+  key is symmetric (ChaCha20-Poly1305)
+  key is distributed encrypted per member
+  key rotates when members change
+}
+
+trait messaging.encrypt_for_channel {
+  encrypt takes plaintext
+  encrypt takes channel_key
+  encrypt returns ciphertext
+  
+  encryption is authenticated
+  encryption includes nonce
+}
+
+trait messaging.decrypt_channel_message {
+  decrypt takes ciphertext
+  decrypt takes channel_key
+  decrypt returns plaintext or error
+  
+  if wrong key:
+    return decryption_error
+  if tampering detected:
+    return authentication_error
+}
+
+gene messaging.direct_encryption {
+  // Direct messages use X25519 key exchange
+  // Ephemeral keys per message
+  // Perfect forward secrecy
+  
+  sender_ephemeral is X25519 keypair
+  shared_secret is DH(sender_ephemeral, recipient_public)
+  message_key is derived from shared_secret
+}
+
+// === THREADS ===
+
+gene messaging.thread {
+  thread has root_message        // The message being replied to
+  thread has replies             // Child messages
+  thread has participant_count   // Unique repliers
+  thread has reply_count         // Total replies
+}
+
+trait messaging.reply_to {
+  reply_to takes parent_message_id
+  reply_to takes content
+  
+  reply is linked to parent
+  reply is shown in thread view
+  parent shows reply count
+}
+
+// === REACTIONS ===
+
+gene messaging.reaction {
+  reaction has message_id
+  reaction has peer_id
+  reaction has emoji             // Unicode emoji
+  reaction has timestamp
+}
+
+trait messaging.add_reaction {
+  add_reaction takes message_id
+  add_reaction takes emoji
+  
+  reaction is broadcast to channel
+  reaction is aggregated for display
+  same peer can have multiple different reactions
+  same peer cannot duplicate same reaction
+}
+
+// === CONSTRAINTS ===
+
+constraint messaging.sender_verification {
+  all messages are signed
+  signature is verified before display
+  unsigned messages are rejected
+  
+  // Prevents impersonation
+}
+
+constraint messaging.encryption_required {
+  channel messages are always encrypted
+  direct messages are always encrypted
+  plaintext never crosses network
+  
+  // Privacy by default
+}
+
+constraint messaging.history_availability {
+  history requires peer cooperation
+  old messages may be unavailable
+  no guarantee of complete history
+  
+  // Trade-off for decentralization
+}
+
+constraint messaging.ordering {
+  messages are ordered by timestamp
+  ties are broken by message_id
+  ordering is eventually consistent
+  
+  // No global ordering guarantee
+  // Local ordering is consistent
+}
+
+// === ERROR TYPES ===
+
+trait messaging.errors {
+  channel_not_found means channel doesn't exist
+  not_a_member means sender not in channel
+  decryption_failed means cannot decrypt message
+  signature_invalid means message rejected
+  rate_limited means sending too fast
+  
+  errors are recoverable
+  errors include context
+}
