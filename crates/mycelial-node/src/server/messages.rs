@@ -28,6 +28,7 @@ pub enum WsMessage {
         from: String,
         from_name: String,
         to: Option<String>,
+        room_id: Option<String>,
         content: String,
         timestamp: i64,
     },
@@ -138,6 +139,43 @@ pub enum WsMessage {
         contributors: Vec<ContributorEntry>,
         timestamp: i64,
     },
+
+    // ============ Room/Seance Messages ============
+
+    /// Successfully joined a room
+    RoomJoined {
+        id: String,
+        name: String,
+        description: Option<String>,
+        topic: String,
+        members: Vec<String>,
+        created_by: String,
+        created_at: i64,
+        is_public: bool,
+    },
+
+    /// Left a room
+    RoomLeft {
+        room_id: String,
+    },
+
+    /// List of available rooms
+    RoomList {
+        rooms: Vec<RoomEntry>,
+    },
+
+    /// A peer joined a room
+    RoomPeerJoined {
+        room_id: String,
+        peer_id: String,
+        peer_name: Option<String>,
+    },
+
+    /// A peer left a room
+    RoomPeerLeft {
+        room_id: String,
+        peer_id: String,
+    },
 }
 
 /// Entry in the peers list
@@ -168,6 +206,17 @@ pub struct ContributorEntry {
     pub percentage: f64,
 }
 
+/// Entry for room list
+#[derive(Debug, Clone, Serialize)]
+pub struct RoomEntry {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub member_count: usize,
+    pub is_public: bool,
+    pub created_at: i64,
+}
+
 /// Messages sent from client to server
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -176,6 +225,7 @@ pub enum ClientMessage {
     SendChat {
         content: String,
         to: Option<String>,
+        room_id: Option<String>,
     },
 
     /// Request peer list
@@ -254,4 +304,35 @@ pub enum ClientMessage {
         /// Unit of measurement
         unit: String,
     },
+
+    // ============ Room/Seance Client Messages ============
+
+    /// Create a new room
+    CreateRoom {
+        /// Room ID (optional, generated if not provided)
+        room_id: Option<String>,
+        /// Room name
+        room_name: String,
+        /// Room description
+        description: Option<String>,
+        /// Whether room is publicly discoverable
+        is_public: Option<bool>,
+    },
+
+    /// Join an existing room
+    JoinRoom {
+        /// Room ID to join
+        room_id: String,
+        /// Optional room name hint (for discovery)
+        room_name: Option<String>,
+    },
+
+    /// Leave a room
+    LeaveRoom {
+        /// Room ID to leave
+        room_id: String,
+    },
+
+    /// Get list of available rooms
+    GetRooms,
 }

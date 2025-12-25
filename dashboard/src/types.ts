@@ -36,8 +36,34 @@ export interface ChatMessage {
   from: string;
   from_name?: string;
   to?: string;
+  room_id?: string;
   content: string;
   timestamp: number;
+}
+
+// Conversation types for enhanced chat
+export type ConversationType = 'community' | 'dm' | 'room';
+
+export interface Conversation {
+  id: string;
+  type: ConversationType;
+  name: string;
+  peerId?: string; // For DMs - the other peer's ID
+  roomId?: string; // For rooms - the room ID
+  lastMessage?: ChatMessage;
+  unreadCount: number;
+  createdAt: number;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  description?: string;
+  topic: string; // Gossipsub topic
+  members: string[]; // Peer IDs
+  createdBy: string;
+  createdAt: number;
+  isPublic: boolean;
 }
 
 // WebSocket message types

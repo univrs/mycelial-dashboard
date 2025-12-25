@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, Conversation } from '@/types';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
-  onSendMessage: (content: string, to?: string) => void;
+  onSendMessage: (content: string, to?: string, roomId?: string) => void;
+  activeConversation?: Conversation;
   selectedPeer?: string | null;
 }
 
-export function ChatPanel({ messages, onSendMessage, selectedPeer }: ChatPanelProps) {
+export function ChatPanel({ messages, onSendMessage, activeConversation, selectedPeer }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -19,8 +20,25 @@ export function ChatPanel({ messages, onSendMessage, selectedPeer }: ChatPanelPr
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    console.log('ChatPanel handleSubmit:', { input: input.trim(), selectedPeer });
-    onSendMessage(input.trim(), selectedPeer || undefined);
+
+    // Determine target based on active conversation
+    let to: string | undefined;
+    let roomId: string | undefined;
+
+    if (activeConversation) {
+      if (activeConversation.type === 'dm' && activeConversation.peerId) {
+        to = activeConversation.peerId;
+      } else if (activeConversation.type === 'room' && activeConversation.roomId) {
+        roomId = activeConversation.roomId;
+      }
+      // community type: no to or roomId (broadcast)
+    } else if (selectedPeer) {
+      // Legacy support for selectedPeer prop
+      to = selectedPeer;
+    }
+
+    console.log('ChatPanel handleSubmit:', { input: input.trim(), to, roomId });
+    onSendMessage(input.trim(), to, roomId);
     setInput('');
   };
 
@@ -31,15 +49,50 @@ export function ChatPanel({ messages, onSendMessage, selectedPeer }: ChatPanelPr
     });
   };
 
+  // Get header text based on active conversation
+  const getHeaderText = () => {
+    if (activeConversation) {
+      switch (activeConversation.type) {
+        case 'community':
+          return { title: 'Community Chat', subtitle: 'Broadcasting to all peers' };
+        case 'dm':
+          return { title: activeConversation.name, subtitle: 'Direct message' };
+        case 'room':
+          return { title: activeConversation.name, subtitle: 'Room chat' };
+      }
+    }
+    if (selectedPeer) {
+      return { title: `Chat with ${selectedPeer.slice(0, 8)}...`, subtitle: 'Direct message' };
+    }
+    return { title: 'Network Chat', subtitle: 'Broadcasting to all peers' };
+  };
+
+  const { title, subtitle } = getHeaderText();
+
+  // Get placeholder text
+  const getPlaceholder = () => {
+    if (activeConversation) {
+      switch (activeConversation.type) {
+        case 'community':
+          return 'Broadcast to community...';
+        case 'dm':
+          return `Message ${activeConversation.name}...`;
+        case 'room':
+          return `Message in ${activeConversation.name}...`;
+      }
+    }
+    return selectedPeer ? 'Send direct message...' : 'Broadcast message...';
+  };
+
   return (
     <div className="flex flex-col h-full bg-forest-floor border border-border-subtle rounded-lg card-hover">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border-subtle bg-deep-earth rounded-t-lg">
         <h3 className="text-lg font-display font-semibold text-mycelium-white">
-          {selectedPeer ? `Chat with ${selectedPeer.slice(0, 8)}...` : 'Network Chat'}
+          {title}
         </h3>
         <p className="text-sm font-body text-soft-gray">
-          {selectedPeer ? 'Direct message' : 'Broadcasting to all peers'}
+          {subtitle}
         </p>
       </div>
 
@@ -62,9 +115,14 @@ export function ChatPanel({ messages, onSendMessage, selectedPeer }: ChatPanelPr
                 <span className="text-xs text-soft-gray font-mono">
                   {formatTime(msg.timestamp)}
                 </span>
-                {msg.to && (
+                {msg.to && activeConversation?.type !== 'dm' && (
                   <span className="text-xs text-spore-purple font-mono">
                     → {msg.to.slice(0, 8)}
+                  </span>
+                )}
+                {msg.room_id && activeConversation?.type !== 'room' && (
+                  <span className="text-xs text-glow-cyan/70 font-mono">
+                    in {msg.room_id}
                   </span>
                 )}
               </div>
@@ -82,7 +140,7 @@ export function ChatPanel({ messages, onSendMessage, selectedPeer }: ChatPanelPr
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={selectedPeer ? 'Send direct message...' : 'Broadcast message...'}
+            placeholder={getPlaceholder()}
             className="flex-1 bg-moss border border-border-subtle rounded px-4 py-2 text-mycelium-white placeholder-soft-gray font-body focus:outline-none focus:border-glow-cyan focus:shadow-glow-sm transition-all"
           />
           <button

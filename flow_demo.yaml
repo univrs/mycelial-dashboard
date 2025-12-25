@@ -1,0 +1,209 @@
+# config.yaml for claude-flow swarm
+name: "vudo-p2p-physarum-phase"
+description: "Develop P2P network layer and Physarum demo for VUDO OS"
+
+repositories:
+    - name: univrs-dol
+      path: ~/repos/univrs-dol
+      role: "DOL language specification and parser"
+
+    - name: univrs-orchestration
+      path: ~/repos/univrs-orchestration/orchestrator
+      role: "VUDO OS core implementation"
+
+    - name: vudo-physarum
+      path: ~/repos/vudo-physarum # New repo
+      role: "Physarum demo - browser WASM visualization"
+
+workflows:
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 1: DOL Extensions
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    dol-network-primitives:
+        description: "Add network module to DOL 2.0"
+        repository: univrs-dol
+        tasks:
+            - name: "Extend lexer for network keywords"
+              action: "Add NodeId, Capability, PeerAddress, ResourceGradient tokens"
+
+            - name: "Extend parser for network module"
+              action: "Parse network.dol specification into AST"
+
+            - name: "Add type checking for crypto primitives"
+              action: "Ed25519 PublicKey, PrivateKey, Signature types"
+
+            - name: "Validate constraint: valid_signature"
+              action: "Semantic analysis for cryptographic constraints"
+
+    dol-physarum-module:
+        description: "Add physarum module to DOL biology package"
+        repository: univrs-metadol
+        tasks:
+            - name: "Add Tube gene with Murray's Law"
+              action: "Parse thickness adaptation constraints"
+
+            - name: "Add Plasmodium system"
+              action: "Parse mass conservation law"
+
+            - name: "Add PhysarumBehavior trait"
+              action: "Parse extend, reinforce, retract, route methods"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 2: Rust Implementation - P2P Layer
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    rust-openraft-credits:
+        description: "Implement credit ledger with OpenRaft consensus"
+        repository: univrs-orchestration
+        dependencies: [dol-network-primitives]
+        tasks:
+            - name: "Add openraft dependency"
+              action: "Cargo.toml: openraft = { version = '0.9', features = ['serde'] }"
+
+            - name: "Create credit_ledger crate"
+              action: |
+                  Create crates/credit_ledger with:
+                  - RaftStorage implementation for credits
+                  - CreditTransaction serialization
+                  - TransactionId generation (content-addressed)
+
+            - name: "Implement CreditLedger trait"
+              action: "balance(), transfer(), history() with Raft consensus"
+
+            - name: "Add attribution chain tracking"
+              action: "Evolves relationship for Spirit derivatives"
+
+    rust-gradient-gossip:
+        description: "Extend Chitchat for resource gradients"
+        repository: univrs-orchestration
+        dependencies: [dol-network-primitives]
+        tasks:
+            - name: "Create gradient_gossip crate"
+              action: |
+                  Create crates/gradient_gossip with:
+                  - ResourceGradient serialization
+                  - Chitchat state extension
+                  - Decay function for stale gradients
+
+            - name: "Implement GradientSource trait"
+              action: "sample() from local metrics, direction() computation"
+
+            - name: "Add gradient aggregation"
+              action: "Weighted average of neighbor gradients"
+
+    rust-node-identity:
+        description: "Implement Ed25519 node identity and bootstrap"
+        repository: univrs-orchestration
+        tasks:
+            - name: "Add ed25519-dalek dependency"
+              action: "Cargo.toml: ed25519-dalek = '2.1'"
+
+            - name: "Create node_identity crate"
+              action: |
+                  Create crates/node_identity with:
+                  - NodeId from Ed25519 public key
+                  - NodeCertificate generation and validation
+                  - Capability attestation
+
+            - name: "Implement bootstrap protocol"
+              action: |
+                  NodeCertificate contains:
+                  - Ed25519 identity (self-signed)
+                  - Initial capability set
+                  - One peer address to connect
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 3: Physarum Demo
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    physarum-wasm-core:
+        description: "Physarum simulation core compiled to WASM"
+        repository: vudo-physarum
+        dependencies: [dol-physarum-module]
+        tasks:
+            - name: "Create Rust WASM project"
+              action: "wasm-pack new physarum-core --template wasm"
+
+            - name: "Implement Tube struct"
+              action: "thickness, flow, adapt(), optimal_thickness()"
+
+            - name: "Implement Plasmodium struct"
+              action: "tubes HashMap, nutrients, cytoplasm"
+
+            - name: "Implement simulation step"
+              action: |
+                  step() function:
+                  1. Sample gradients
+                  2. Compute Hagen-Poiseuille flow
+                  3. Murray's Law adaptation
+                  4. Prune thin tubes
+                  5. Grow toward gradients
+
+            - name: "Export to JavaScript"
+              action: "#[wasm_bindgen] for Plasmodium, step(), get_tubes()"
+
+    physarum-browser-viz:
+        description: "Browser visualization with Three.js/SVG"
+        repository: vudo-physarum
+        dependencies: [physarum-wasm-core]
+        tasks:
+            - name: "Create Vite + React project"
+              action: "npm create vite@latest physarum-viz -- --template react-ts"
+
+            - name: "Add Three.js scene"
+              action: |
+                  Scene with:
+                  - Nodes as glowing spheres (size = resource level)
+                  - Tubes as cylinders (radius = thickness)
+                  - Animated cytoplasm flow
+
+            - name: "Add SVG fallback"
+              action: "2D projection with animated tubes"
+
+            - name: "Connect to WASM simulation"
+              action: |
+                  useEffect loop:
+                  - Call step() at 60 FPS
+                  - Update Three.js geometry from get_tubes()
+                  - Color tubes by flow intensity
+
+            - name: "Add WebSocket connection"
+              action: |
+                  Optional connection to real VUDO nodes:
+                  - Receive ResourceGradient updates
+                  - Send routing decisions back
+                  - Visualize real network as slime mold
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 4: Integration
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    integration-test:
+        description: "Test P2P network with Physarum routing"
+        repository: univrs-orchestrator
+        dependencies:
+            [rust-openraft-credits, rust-gradient-gossip, physarum-wasm-core]
+        tasks:
+            - name: "Create integration test harness"
+              action: |
+                  tests/physarum_network.rs:
+                  - Spawn 5 VUDO nodes locally
+                  - Each node runs Physarum simulation
+                  - Inject resource gradients
+                  - Verify routing converges to optimal
+
+            - name: "Test credit transfer"
+              action: "Transfer credits between nodes, verify Raft consensus"
+
+            - name: "Test gradient propagation"
+              action: "Change resource at one node, verify gossip reaches all"
+
+            - name: "Test Physarum adaptation"
+              action: |
+                  Scenario:
+                  - Start with uniform resources
+                  - Concentrate resources at one node
+                  - Verify tubes thicken toward it
+                  - Move resources to different node
+                  - Verify network reconfigures

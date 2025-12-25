@@ -12,6 +12,8 @@ import type {
   VouchRequest,
   ResourceContribution,
   ResourcePool,
+  Conversation,
+  Room,
 } from '@/types';
 
 interface UseP2POptions {
@@ -26,6 +28,10 @@ interface P2PState {
   localPeerId: string | null;
   peers: Map<string, NormalizedPeer>;
   messages: ChatMessage[];
+  // Conversation state
+  conversations: Map<string, Conversation>;
+  rooms: Map<string, Room>;
+  activeConversationId: string;
   // Economics state
   creditLines: CreditLine[];
   creditTransfers: CreditTransfer[];
@@ -33,6 +39,66 @@ interface P2PState {
   vouches: VouchRequest[];
   resourceContributions: ResourceContribution[];
   resourcePool: ResourcePool | null;
+}
+
+// Community conversation ID constant
+const COMMUNITY_CONVERSATION_ID = 'community';
+
+// Helper to get conversation ID for a message
+function getConversationId(msg: ChatMessage, _localPeerId: string | null): string {
+  if (msg.room_id) {
+    return `room:${msg.room_id}`;
+  }
+  if (msg.to) {
+    // DM conversation - use sorted peer IDs to ensure consistency
+    const peers = [msg.from, msg.to].sort();
+    return `dm:${peers[0]}:${peers[1]}`;
+  }
+  // Broadcast/community message
+  return COMMUNITY_CONVERSATION_ID;
+}
+
+// Helper to create or update conversation from message
+function updateConversation(
+  conversations: Map<string, Conversation>,
+  msg: ChatMessage,
+  localPeerId: string | null,
+  peers: Map<string, NormalizedPeer>,
+  isActive: boolean
+): Map<string, Conversation> {
+  const convId = getConversationId(msg, localPeerId);
+  const existing = conversations.get(convId);
+
+  let name = 'Community';
+  let peerId: string | undefined;
+  let roomId: string | undefined;
+  let type: 'community' | 'dm' | 'room' = 'community';
+
+  if (msg.room_id) {
+    type = 'room';
+    roomId = msg.room_id;
+    name = `Room: ${msg.room_id}`;
+  } else if (msg.to) {
+    type = 'dm';
+    // Get the other peer's ID (not our own)
+    peerId = msg.from === localPeerId ? msg.to : msg.from;
+    const peer = peers.get(peerId);
+    name = peer?.name || `Peer-${peerId.slice(0, 8)}`;
+  }
+
+  const updated = new Map(conversations);
+  updated.set(convId, {
+    id: convId,
+    type,
+    name,
+    peerId,
+    roomId,
+    lastMessage: msg,
+    unreadCount: existing ? (isActive ? 0 : existing.unreadCount + 1) : (isActive ? 0 : 1),
+    createdAt: existing?.createdAt || msg.timestamp,
+  });
+
+  return updated;
 }
 
 // Environment configuration - P2P node runs on port 8080
@@ -85,11 +151,26 @@ export function useP2P(options: UseP2POptions = {}) {
   reconnectIntervalRef.current = reconnectInterval;
   maxReconnectAttemptsRef.current = maxReconnectAttempts;
 
+  // Initialize with default community conversation
+  const defaultConversations = new Map<string, Conversation>([
+    [COMMUNITY_CONVERSATION_ID, {
+      id: COMMUNITY_CONVERSATION_ID,
+      type: 'community',
+      name: 'Community',
+      unreadCount: 0,
+      createdAt: Date.now(),
+    }],
+  ]);
+
   const [state, setState] = useState<P2PState>({
     connected: false,
     localPeerId: null,
     peers: new Map(),
     messages: [],
+    // Conversation initial state
+    conversations: defaultConversations,
+    rooms: new Map(),
+    activeConversationId: COMMUNITY_CONVERSATION_ID,
     // Economics initial state
     creditLines: [],
     creditTransfers: [],
@@ -192,12 +273,72 @@ export function useP2P(options: UseP2POptions = {}) {
         break;
       }
 
-      case 'chat_message':
-        setState(s => ({
-          ...s,
-          messages: [...s.messages.slice(-99), (message.data || message) as ChatMessage],
-        }));
+      case 'chat_message': {
+        const chatMsg = (message.data || message) as ChatMessage;
+        setState(s => {
+          const convId = getConversationId(chatMsg, s.localPeerId);
+          const isActive = convId === s.activeConversationId;
+          return {
+            ...s,
+            messages: [...s.messages.slice(-99), chatMsg],
+            conversations: updateConversation(s.conversations, chatMsg, s.localPeerId, s.peers, isActive),
+          };
+        });
         break;
+      }
+
+      case 'room_joined': {
+        const room = (message.data || message) as Room;
+        setState(s => {
+          const newRooms = new Map(s.rooms);
+          newRooms.set(room.id, room);
+          // Add conversation for the room
+          const newConversations = new Map(s.conversations);
+          newConversations.set(`room:${room.id}`, {
+            id: `room:${room.id}`,
+            type: 'room',
+            name: room.name,
+            roomId: room.id,
+            unreadCount: 0,
+            createdAt: room.createdAt,
+          });
+          return { ...s, rooms: newRooms, conversations: newConversations };
+        });
+        break;
+      }
+
+      case 'room_left': {
+        const roomId = (message.room_id || (message.data as Record<string, unknown>)?.room_id) as string;
+        setState(s => {
+          const newRooms = new Map(s.rooms);
+          newRooms.delete(roomId);
+          const newConversations = new Map(s.conversations);
+          newConversations.delete(`room:${roomId}`);
+          return { ...s, rooms: newRooms, conversations: newConversations };
+        });
+        break;
+      }
+
+      case 'room_list': {
+        const rooms = (message.rooms || (message.data as Record<string, unknown>)?.rooms || []) as Room[];
+        setState(s => {
+          const newRooms = new Map(s.rooms);
+          const newConversations = new Map(s.conversations);
+          for (const room of rooms) {
+            newRooms.set(room.id, room);
+            newConversations.set(`room:${room.id}`, {
+              id: `room:${room.id}`,
+              type: 'room',
+              name: room.name,
+              roomId: room.id,
+              unreadCount: 0,
+              createdAt: room.createdAt,
+            });
+          }
+          return { ...s, rooms: newRooms, conversations: newConversations };
+        });
+        break;
+      }
 
       // Economics message handlers
       case 'vouch_request': {
@@ -375,16 +516,16 @@ export function useP2P(options: UseP2POptions = {}) {
     }
   }, [fetchInfo, fetchPeers, handleMessage]);
 
-  // Send chat message
-  const sendChat = useCallback((content: string, to?: string) => {
-    console.log('sendChat called:', { content, to, readyState: wsRef.current?.readyState });
+  // Send chat message (to DM, room, or community)
+  const sendChat = useCallback((content: string, to?: string, roomId?: string) => {
+    console.log('sendChat called:', { content, to, roomId, readyState: wsRef.current?.readyState });
 
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not open! State:', wsRef.current?.readyState);
       return;
     }
 
-    const message = JSON.stringify({ type: 'send_chat', content, to });
+    const message = JSON.stringify({ type: 'send_chat', content, to, room_id: roomId });
     console.log('Sending via WebSocket:', message);
     wsRef.current.send(message);
 
@@ -398,15 +539,145 @@ export function useP2P(options: UseP2POptions = {}) {
         from: localId,
         from_name: `Peer-${shortId} (you)`,
         to: to || undefined,
+        room_id: roomId || undefined,
         content,
         timestamp: Date.now(),
       };
       return {
         ...s,
         messages: [...s.messages.slice(-99), chatMessage],
+        conversations: updateConversation(s.conversations, chatMessage, localId, s.peers, true),
       };
     });
   }, []);
+
+  // Switch active conversation
+  const setActiveConversation = useCallback((conversationId: string) => {
+    setState(s => {
+      // Clear unread count for the conversation we're switching to
+      const newConversations = new Map(s.conversations);
+      const conv = newConversations.get(conversationId);
+      if (conv) {
+        newConversations.set(conversationId, { ...conv, unreadCount: 0 });
+      }
+      return {
+        ...s,
+        activeConversationId: conversationId,
+        conversations: newConversations,
+      };
+    });
+  }, []);
+
+  // Start a DM conversation with a peer
+  const startDMConversation = useCallback((peerId: string) => {
+    setState(s => {
+      const localId = s.localPeerId || 'unknown';
+      const peers = [localId, peerId].sort();
+      const convId = `dm:${peers[0]}:${peers[1]}`;
+
+      // Check if conversation already exists
+      if (s.conversations.has(convId)) {
+        return { ...s, activeConversationId: convId };
+      }
+
+      // Create new DM conversation
+      const peer = s.peers.get(peerId);
+      const newConversations = new Map(s.conversations);
+      newConversations.set(convId, {
+        id: convId,
+        type: 'dm',
+        name: peer?.name || `Peer-${peerId.slice(0, 8)}`,
+        peerId,
+        unreadCount: 0,
+        createdAt: Date.now(),
+      });
+
+      return {
+        ...s,
+        conversations: newConversations,
+        activeConversationId: convId,
+      };
+    });
+  }, []);
+
+  // Join a room
+  const joinRoom = useCallback((roomId: string, roomName?: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not open for joining room');
+      return;
+    }
+    const message = JSON.stringify({ type: 'join_room', room_id: roomId, room_name: roomName });
+    wsRef.current.send(message);
+    console.log('Joining room:', roomId);
+  }, []);
+
+  // Leave a room
+  const leaveRoom = useCallback((roomId: string) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not open for leaving room');
+      return;
+    }
+    const message = JSON.stringify({ type: 'leave_room', room_id: roomId });
+    wsRef.current.send(message);
+    console.log('Leaving room:', roomId);
+
+    // Optimistically remove from state
+    setState(s => {
+      const newRooms = new Map(s.rooms);
+      newRooms.delete(roomId);
+      const newConversations = new Map(s.conversations);
+      newConversations.delete(`room:${roomId}`);
+      // Switch to community if we were in this room
+      const newActiveId = s.activeConversationId === `room:${roomId}` ? COMMUNITY_CONVERSATION_ID : s.activeConversationId;
+      return { ...s, rooms: newRooms, conversations: newConversations, activeConversationId: newActiveId };
+    });
+  }, []);
+
+  // Create a new room
+  const createRoom = useCallback((name: string, description?: string, isPublic: boolean = true) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not open for creating room');
+      return;
+    }
+    const roomId = `room-${Date.now().toString(36)}`;
+    const message = JSON.stringify({
+      type: 'create_room',
+      room_id: roomId,
+      room_name: name,
+      description,
+      is_public: isPublic,
+    });
+    wsRef.current.send(message);
+    console.log('Creating room:', name);
+  }, []);
+
+  // Get messages filtered by active conversation
+  const getActiveMessages = useCallback((): ChatMessage[] => {
+    const convId = state.activeConversationId;
+
+    if (convId === COMMUNITY_CONVERSATION_ID) {
+      // Community: show messages without 'to' and without 'room_id'
+      return state.messages.filter(m => !m.to && !m.room_id);
+    }
+
+    if (convId.startsWith('dm:')) {
+      // DM: show messages between the two peers
+      const parts = convId.split(':');
+      const peer1 = parts[1];
+      const peer2 = parts[2];
+      return state.messages.filter(m =>
+        m.to && ((m.from === peer1 && m.to === peer2) || (m.from === peer2 && m.to === peer1))
+      );
+    }
+
+    if (convId.startsWith('room:')) {
+      // Room: show messages with matching room_id
+      const roomId = convId.replace('room:', '');
+      return state.messages.filter(m => m.room_id === roomId);
+    }
+
+    return [];
+  }, [state.activeConversationId, state.messages]);
 
   // Send vouch request
   const sendVouch = useCallback((request: VouchRequest) => {
@@ -506,7 +777,7 @@ export function useP2P(options: UseP2POptions = {}) {
   }, [state.localPeerId]);
 
   // Cast vote on proposal
-  const sendVote = useCallback((proposalId: string, vote: 'for' | 'against', weight: number = 1) => {
+  const sendVote = useCallback((proposalId: string, vote: 'for' | 'against' | 'abstain', weight: number = 1) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not open for vote');
       return;
@@ -629,6 +900,14 @@ export function useP2P(options: UseP2POptions = {}) {
     resetConnection,
     graphData,
     refreshPeers: fetchPeers,
+    // Conversation functions
+    setActiveConversation,
+    startDMConversation,
+    getActiveMessages,
+    // Room functions
+    joinRoom,
+    leaveRoom,
+    createRoom,
     // Economics functions
     sendVouch,
     sendCreditLine,

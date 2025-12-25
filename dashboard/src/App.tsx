@@ -4,6 +4,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useOrchestrator } from '@/hooks/useOrchestrator';
 import { PeerGraph } from '@/components/PeerGraph';
 import { ChatPanel } from '@/components/ChatPanel';
+import { ConversationSidebar } from '@/components/ConversationSidebar';
 import { ReputationCard } from '@/components/ReputationCard';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { OnboardingPanel } from '@/components/OnboardingPanel';
@@ -20,15 +21,27 @@ function App() {
     connected,
     localPeerId,
     peers,
-    messages,
+    messages: _messages, // Used via getActiveMessages
     sendChat,
     graphData,
+    // Conversation state
+    conversations,
+    rooms,
+    activeConversationId,
+    // Conversation functions
+    setActiveConversation,
+    startDMConversation,
+    getActiveMessages,
+    // Room functions
+    joinRoom,
+    leaveRoom,
+    createRoom,
     // Economics state
     creditLines,
     creditTransfers,
     proposals,
-    vouches,
-    resourceContributions,
+    vouches: _vouches, // Available for future use
+    resourceContributions: _resourceContributions, // Available for future use
     resourcePool,
     // Economics functions
     sendVouch,
@@ -36,7 +49,7 @@ function App() {
     sendCreditTransfer,
     sendProposal,
     sendVote,
-    sendResourceContribution,
+    sendResourceContribution: _sendResourceContribution, // Available for future use
   } = useP2P();
   const { theme, toggleTheme } = useTheme();
   const {
@@ -87,8 +100,14 @@ function App() {
   // Handle direct message to a peer
   const handleDirectMessage = useCallback((peerId: string) => {
     setSelectedPeerId(peerId);
-    // Focus could be shifted to chat panel in a more complete implementation
-  }, []);
+    startDMConversation(peerId);
+  }, [startDMConversation]);
+
+  // Get active conversation object
+  const activeConversation = conversations.get(activeConversationId);
+
+  // Get filtered messages for active conversation
+  const activeMessages = useMemo(() => getActiveMessages(), [getActiveMessages]);
 
   // Handle credit line creation
   const handleCreateCreditLine = useCallback((peerId: string, limit: number) => {
@@ -294,13 +313,29 @@ function App() {
               />
             </div>
 
-            {/* Chat Panel */}
-            <div className="flex-1 min-h-[300px]">
-              <ChatPanel
-                messages={messages}
-                onSendMessage={sendChat}
-                selectedPeer={selectedPeerId}
-              />
+            {/* Chat Section with Conversation Sidebar */}
+            <div className="flex-1 min-h-[300px] flex gap-4">
+              {/* Conversation Sidebar */}
+              <div className="w-64 flex-shrink-0">
+                <ConversationSidebar
+                  conversations={conversations}
+                  rooms={rooms}
+                  activeConversationId={activeConversationId}
+                  onSelectConversation={setActiveConversation}
+                  onCreateRoom={createRoom}
+                  onJoinRoom={joinRoom}
+                  onLeaveRoom={leaveRoom}
+                />
+              </div>
+              {/* Chat Panel */}
+              <div className="flex-1">
+                <ChatPanel
+                  messages={activeMessages}
+                  onSendMessage={sendChat}
+                  activeConversation={activeConversation}
+                  selectedPeer={selectedPeerId}
+                />
+              </div>
             </div>
           </div>
         </div>

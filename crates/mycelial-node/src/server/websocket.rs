@@ -102,8 +102,8 @@ async fn handle_client_message(msg: ClientMessage, state: &AppState) {
     info!("Received client message: {:?}", msg);
 
     match msg {
-        ClientMessage::SendChat { content, to } => {
-            info!("SendChat: content='{}', to={:?}", content, to);
+        ClientMessage::SendChat { content, to, room_id } => {
+            info!("SendChat: content='{}', to={:?}, room_id={:?}", content, to, room_id);
 
             // Generate message ID and timestamp for local echo
             let message_id = Uuid::new_v4().to_string();
@@ -119,15 +119,18 @@ async fn handle_client_message(msg: ClientMessage, state: &AppState) {
             // Serialize and publish to network
             match serde_json::to_vec(&chat_msg) {
                 Ok(data) => {
-                    let topic = if to.is_some() {
-                        "/mycelial/1.0.0/direct"
+                    // Determine topic based on message target
+                    let topic = if room_id.is_some() {
+                        format!("/mycelial/1.0.0/room/{}", room_id.as_ref().unwrap())
+                    } else if to.is_some() {
+                        "/mycelial/1.0.0/direct".to_string()
                     } else {
-                        "/mycelial/1.0.0/chat"
+                        "/mycelial/1.0.0/chat".to_string()
                     };
 
                     info!("Publishing to topic: {}", topic);
 
-                    if let Err(e) = state.network.publish(topic, data).await {
+                    if let Err(e) = state.network.publish(&topic, data).await {
                         error!("Failed to publish chat: {}", e);
                     } else {
                         info!("Chat message published successfully");
@@ -140,6 +143,7 @@ async fn handle_client_message(msg: ClientMessage, state: &AppState) {
                             from: state.local_peer_id.to_string(),
                             from_name: state.node_name.clone(),
                             to: to.clone(),
+                            room_id: room_id.clone(),
                             content: content.clone(),
                             timestamp,
                         };
@@ -470,6 +474,124 @@ async fn handle_client_message(msg: ClientMessage, state: &AppState) {
                     error!("Failed to serialize resource contribution: {}", e);
                 }
             }
+        }
+
+        // ============ Room/Seance Handlers ============
+
+        ClientMessage::CreateRoom { room_id, room_name, description, is_public } => {
+            info!("CreateRoom: name='{}', is_public={:?}", room_name, is_public);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            let id = room_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+            let topic = format!("/mycelial/1.0.0/room/{}", id);
+            let is_public = is_public.unwrap_or(true);
+
+            // Subscribe to the room topic
+            if let Err(e) = state.network.subscribe(&topic).await {
+                error!("Failed to subscribe to room topic {}: {}", topic, e);
+                let error_msg = WsMessage::Error {
+                    message: format!("Failed to create room: {}", e),
+                };
+                let _ = state.event_tx.send(error_msg);
+                return;
+            }
+
+            info!("Room created and subscribed to topic: {}", topic);
+
+            // Send room joined confirmation
+            let room_msg = WsMessage::RoomJoined {
+                id: id.clone(),
+                name: room_name,
+                description,
+                topic,
+                members: vec![state.local_peer_id.to_string()],
+                created_by: state.local_peer_id.to_string(),
+                created_at: timestamp,
+                is_public,
+            };
+            let _ = state.event_tx.send(room_msg);
+        }
+
+        ClientMessage::JoinRoom { room_id, room_name: _ } => {
+            info!("JoinRoom: room_id='{}'", room_id);
+
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            let topic = format!("/mycelial/1.0.0/room/{}", room_id);
+
+            // Subscribe to the room topic
+            if let Err(e) = state.network.subscribe(&topic).await {
+                error!("Failed to subscribe to room topic {}: {}", topic, e);
+                let error_msg = WsMessage::Error {
+                    message: format!("Failed to join room: {}", e),
+                };
+                let _ = state.event_tx.send(error_msg);
+                return;
+            }
+
+            info!("Joined room and subscribed to topic: {}", topic);
+
+            // Send room joined confirmation
+            // Note: In a full implementation, we'd fetch room details from state/network
+            let room_msg = WsMessage::RoomJoined {
+                id: room_id.clone(),
+                name: format!("Room {}", &room_id[..8.min(room_id.len())]),
+                description: None,
+                topic: topic.clone(),
+                members: vec![state.local_peer_id.to_string()],
+                created_by: "unknown".to_string(),
+                created_at: timestamp,
+                is_public: true,
+            };
+            let _ = state.event_tx.send(room_msg);
+
+            // Notify other room members (broadcast to room topic)
+            let peer_joined_msg = WsMessage::RoomPeerJoined {
+                room_id: room_id.clone(),
+                peer_id: state.local_peer_id.to_string(),
+                peer_name: Some(state.node_name.clone()),
+            };
+            if let Ok(data) = serde_json::to_vec(&peer_joined_msg) {
+                if let Err(e) = state.network.publish(&topic, data).await {
+                    warn!("Failed to announce room join: {}", e);
+                }
+            }
+        }
+
+        ClientMessage::LeaveRoom { room_id } => {
+            info!("LeaveRoom: room_id='{}'", room_id);
+
+            let topic = format!("/mycelial/1.0.0/room/{}", room_id);
+
+            // Notify other room members before leaving
+            let peer_left_msg = WsMessage::RoomPeerLeft {
+                room_id: room_id.clone(),
+                peer_id: state.local_peer_id.to_string(),
+            };
+            if let Ok(data) = serde_json::to_vec(&peer_left_msg) {
+                if let Err(e) = state.network.publish(&topic, data).await {
+                    warn!("Failed to announce room leave: {}", e);
+                }
+            }
+
+            // Unsubscribe from the room topic
+            if let Err(e) = state.network.unsubscribe(&topic).await {
+                error!("Failed to unsubscribe from room topic {}: {}", topic, e);
+            }
+
+            info!("Left room and unsubscribed from topic: {}", topic);
+
+            // Send room left confirmation
+            let left_msg = WsMessage::RoomLeft { room_id };
+            let _ = state.event_tx.send(left_msg);
+        }
+
+        ClientMessage::GetRooms => {
+            info!("GetRooms requested");
+
+            // For now, send an empty list
+            // In a full implementation, we'd query a room registry or DHT
+            let rooms_msg = WsMessage::RoomList { rooms: vec![] };
+            let _ = state.event_tx.send(rooms_msg);
         }
     }
 }

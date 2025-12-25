@@ -388,16 +388,25 @@ async fn handle_network_event(event: NetworkEvent, state: &AppState, local_peer_
                     }
                 }
             }
-            // Try to parse as chat message (handles chat, content, and direct topics)
-            else if topic.contains("chat") || topic.contains("content") || topic.contains("direct") {
+            // Try to parse as chat message (handles chat, content, direct, and room topics)
+            else if topic.contains("chat") || topic.contains("content") || topic.contains("direct") || topic.contains("room") {
                 if let Ok(content) = String::from_utf8(data.clone()) {
                     let short_from = &from_id[..8.min(from_id.len())];
+
+                    // Extract room_id from topic if it's a room message
+                    // Topic format: /mycelial/1.0.0/room/{room_id}
+                    let room_id = if topic.contains("/room/") {
+                        topic.split("/room/").nth(1).map(|s| s.to_string())
+                    } else {
+                        None
+                    };
 
                     let _ = state.event_tx.send(WsMessage::ChatMessage {
                         id: message_id.to_string(),
                         from: from_id.clone(),
                         from_name: format!("Peer-{}", short_from),
                         to: None,
+                        room_id,
                         content,
                         timestamp: ts,
                     });
